@@ -1,6 +1,7 @@
 package node2
 
 import (
+	"github.com/go-errors/errors"
 	"crypto/ecdsa"
 	"fmt"
 	"math/rand"
@@ -573,6 +574,9 @@ func TestSyncProcess(t *testing.T) {
 	posetWrapper2.EXPECT().InsertEvent(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	posetWrapper2.EXPECT().SetWireInfoAndSign(gomock.Any(), gomock.Any()).Return(nil).AnyTimes()
 	posetWrapper2.EXPECT().GetPendingLoadedEvents().Return(int64(1)).AnyTimes()
+
+	var index map[string]poset.EventHash
+	posetWrapper2.EXPECT().GetParticipantEvents(gomock.Any(), gomock.Any()).Return(&poset.EventHashes{index["test"]}, errors.New("test")).AnyTimes()
 	
 	
 	// Submit transaction for node2
