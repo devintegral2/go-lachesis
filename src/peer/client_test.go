@@ -4,17 +4,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"github.com/Fantom-foundation/go-lachesis/src/common/hexutil"
-	"net"
 	"net/rpc"
 	"reflect"
 	"testing"
 	"time"
-
+	
 	"github.com/pkg/errors"
-
+	
+	"github.com/Fantom-foundation/go-lachesis/src/common/hexutil"
+	"github.com/Fantom-foundation/go-lachesis/src/network"
 	"github.com/Fantom-foundation/go-lachesis/src/peer"
-	"github.com/Fantom-foundation/go-lachesis/src/peer/fakenet"
 	"github.com/Fantom-foundation/go-lachesis/src/poset"
 )
 
@@ -193,16 +192,16 @@ func TestNewClient(t *testing.T) {
 	defer close(done)
 
 	address := newAddress()
+	listener := network.TcpListener(address)
 	backend := newBackend(t, conf, logger, address, done,
-		expSyncResponse, 0, net.Listen)
+		expSyncResponse, 0, listener)
 	defer func() {
 		if err := backend.Close(); err != nil {
 			t.Fatal(err)
 		}
 	}()
 
-	rpcCli, err := peer.NewRPCClient(
-		peer.TCP, address, time.Second, net.DialTimeout)
+	rpcCli, err := peer.NewRPCClient(peer.TCP, address, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -235,19 +234,18 @@ func TestFakeNet(t *testing.T) {
 	defer close(done)
 
 	// Create fake network
-	network := fakenet.NewNetwork()
 
 	address := newAddress()
+	listener := network.FakeListener(address)
 	backend := newBackend(t, conf, logger, address, done,
-		expSyncResponse, 0, network.CreateListener)
+		expSyncResponse, 0, listener)
 	defer func() {
 		if err := backend.Close(); err != nil {
 			t.Fatal(err)
 		}
 	}()
 
-	rpcCli, err := peer.NewRPCClient(peer.TCP, address, time.Second,
-		network.CreateNetConn)
+	rpcCli, err := peer.NewRPCClient("fake", address, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -25,7 +25,7 @@ type CreateListenerFunc func(network, address string) (net.Listener, error)
 // SyncServer is an interface representing methods for sync server.
 type SyncServer interface {
 	ReceiverChannel() <-chan *RPC
-	ListenAndServe(network, address string) error
+	ListenAndServe() error
 	Close() error
 }
 
@@ -41,7 +41,6 @@ type Backend struct {
 	done         chan struct{}
 	idleTimeout  time.Duration
 	listener     net.Listener
-	listenerFunc CreateListenerFunc
 	logger       logrus.FieldLogger
 	receiver     chan *RPC
 	server       *rpc.Server
@@ -68,7 +67,7 @@ func NewBackendConfig() *BackendConfig {
 
 // NewBackend creates new sync Backend.
 func NewBackend(conf *BackendConfig,
-	logger logrus.FieldLogger, listenerFunc CreateListenerFunc) *Backend {
+	logger logrus.FieldLogger, listener net.Listener) *Backend {
 	conns := make(map[net.Conn]bool)
 	receiver := make(chan *RPC)
 	done := make(chan struct{})
@@ -82,7 +81,7 @@ func NewBackend(conf *BackendConfig,
 		conns:        conns,
 		done:         done,
 		idleTimeout:  conf.IdleTimeout,
-		listenerFunc: listenerFunc,
+		listener:     listener,
 		logger:       logger,
 		receiver:     receiver,
 		server:       rpcServer,
@@ -98,7 +97,7 @@ func (srv *Backend) ReceiverChannel() <-chan *RPC {
 }
 
 // ListenAndServe starts sync server.
-func (srv *Backend) ListenAndServe(network, address string) error {
+func (srv *Backend) ListenAndServe() error {
 	srv.mtx.RLock()
 	shutdown := srv.shutdown
 	srv.mtx.RUnlock()
@@ -110,18 +109,10 @@ func (srv *Backend) ListenAndServe(network, address string) error {
 	errChan := make(chan error)
 
 	go func() {
-		listener, err := srv.listenerFunc(network, address)
-		if err != nil {
-			errChan <- err
-			return
-		}
-
-		srv.listener = listener
-
 		errChan <- nil
 
 		for {
-			conn, err := listener.Accept()
+			conn, err := srv.listener.Accept()
 			if err != nil {
 				return
 			}

@@ -5,6 +5,8 @@ import (
 	"net"
 	"net/rpc"
 	"time"
+
+	"github.com/Fantom-foundation/go-lachesis/src/network"
 )
 
 // CreateSyncClientFunc is a function to create a sync client.
@@ -39,10 +41,18 @@ type Client struct {
 }
 
 // NewRPCClient creates new RPC client.
-func NewRPCClient(
-	network, address string, timeout time.Duration,
-	createNetConnFunc CreateNetConnFunc) (*rpc.Client, error) {
-	conn, err := createNetConnFunc(network, address, timeout)
+func NewRPCClient(typeNetwork, address string, timeout time.Duration) (*rpc.Client, error) {
+	
+	if typeNetwork == "fake" {
+		conn, err := network.FakeDialer("127.0.0.1")(context.Background(), address)
+		if err != nil {
+			return nil, err
+		}
+
+		return rpc.NewClient(conn), nil
+	}
+
+	conn, err := net.DialTimeout(typeNetwork, address, timeout)
 	if err != nil {
 		return nil, err
 	}

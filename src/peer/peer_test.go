@@ -2,15 +2,15 @@ package peer_test
 
 import (
 	"context"
-	"net"
 	"os"
 	"reflect"
 	"testing"
 	"time"
-
+	
 	"github.com/sirupsen/logrus"
-
+	
 	"github.com/Fantom-foundation/go-lachesis/src/peer"
+	"github.com/Fantom-foundation/go-lachesis/src/network"
 )
 
 var logger logrus.FieldLogger
@@ -162,8 +162,7 @@ func newNode(t *testing.T, done chan struct{}, logger logrus.FieldLogger,
 	clientTimeout time.Duration) *node {
 	createFu := func(target string,
 		timeout time.Duration) (peer.SyncClient, error) {
-		rClient, err := peer.NewRPCClient(
-			peer.TCP, target, timeout, net.DialTimeout)
+		rClient, err := peer.NewRPCClient(peer.TCP, target, timeout)
 		if err != nil {
 			return nil, err
 		}
@@ -171,8 +170,9 @@ func newNode(t *testing.T, done chan struct{}, logger logrus.FieldLogger,
 	}
 	producer := peer.NewProducer(limit, clientTimeout, createFu)
 	address := newAddress()
+	listener := network.TcpListener(address)
 	backend := newBackend(t, backConf, logger, address, done,
-		resp, 0, net.Listen)
+		resp, 0, listener)
 	return &node{address: address,
 		transport: peer.NewTransport(logger, producer, backend)}
 }
