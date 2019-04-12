@@ -15,6 +15,7 @@ import (
 	"github.com/Fantom-foundation/go-lachesis/src/peer"
 	"github.com/Fantom-foundation/go-lachesis/src/peers"
 	"github.com/Fantom-foundation/go-lachesis/src/poset"
+	"github.com/Fantom-foundation/go-lachesis/src/utils"
 )
 
 const delay = 100 * time.Millisecond
@@ -41,7 +42,7 @@ func NewNodeList(count int, logger *logrus.Logger) NodeList {
 	participants := peers.NewPeers()
 	keys := make(map[*peers.Peer]*ecdsa.PrivateKey)
 	for i := 0; i < count; i++ {
-		addr := network.RandomAddress()
+		addr := utils.RandomAddress()
 		key, _ := crypto.GenerateECDSAKey()
 		pubKey := fmt.Sprintf("0x%X", common.FromECDSAPub(&key.PublicKey))
 		peer := peers.NewPeer(pubKey, addr)

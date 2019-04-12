@@ -3,9 +3,6 @@ package network
 import (
 	"context"
 	"net"
-	"math/rand"
-	"strconv"
-	"time"
 )
 
 // ListenFunc returns addr listener.
@@ -45,10 +42,4 @@ func FakeDialer(from string) func(context.Context, string) (net.Conn, error) {
 
 		return listener.connect(from)
 	}
-}
-
-// RandomAddress creates random network address in the format address:port.
-func RandomAddress() string {
-	gen := rand.New(rand.NewSource(time.Now().UnixNano()))
-	return "127.0.0.1" + ":" + strconv.Itoa(gen.Intn(65534))
 }

@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 	
+	"github.com/sirupsen/logrus"
+
 	"github.com/Fantom-foundation/go-lachesis/src/common"
 	"github.com/Fantom-foundation/go-lachesis/src/crypto"
 	"github.com/Fantom-foundation/go-lachesis/src/dummy"
@@ -22,7 +24,6 @@ import (
 	"github.com/Fantom-foundation/go-lachesis/src/peers"
 	"github.com/Fantom-foundation/go-lachesis/src/poset"
 	"github.com/Fantom-foundation/go-lachesis/src/utils"
-	"github.com/sirupsen/logrus"
 )
 
 func initPeers(number int) ([]*ecdsa.PrivateKey, *peers.Peers, []string) {
@@ -33,7 +34,7 @@ func initPeers(number int) ([]*ecdsa.PrivateKey, *peers.Peers, []string) {
 	for i := 0; i < number; i++ {
 		key, _ := crypto.GenerateECDSAKey()
 		keys = append(keys, key)
-		addr := network.RandomAddress()
+		addr := utils.RandomAddress()
 		adds = append(adds, addr)
 
 		ps.AddPeer(peers.NewPeer(

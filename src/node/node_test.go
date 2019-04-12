@@ -23,6 +23,7 @@ import (
 	"github.com/Fantom-foundation/go-lachesis/src/peer"
 	"github.com/Fantom-foundation/go-lachesis/src/peers"
 	"github.com/Fantom-foundation/go-lachesis/src/poset"
+	"github.com/Fantom-foundation/go-lachesis/src/utils"
 )
 
 type TestData struct {
@@ -62,7 +63,7 @@ func initPeers(number int) ([]*ecdsa.PrivateKey, *peers.Peers, []string) {
 	for i := 0; i < number; i++ {
 		key, _ := crypto.GenerateECDSAKey()
 		keys = append(keys, key)
-		addr := network.RandomAddress()
+		addr := utils.RandomAddress()
 		adds = append(adds, addr)
 
 		ps.AddPeer(peers.NewPeer(

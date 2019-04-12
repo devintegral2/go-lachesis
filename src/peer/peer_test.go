@@ -11,6 +11,7 @@ import (
 	
 	"github.com/Fantom-foundation/go-lachesis/src/peer"
 	"github.com/Fantom-foundation/go-lachesis/src/network"
+	"github.com/Fantom-foundation/go-lachesis/src/utils"
 )
 
 var logger logrus.FieldLogger
@@ -169,7 +170,7 @@ func newNode(t *testing.T, done chan struct{}, logger logrus.FieldLogger,
 		return peer.NewClient(rClient)
 	}
 	producer := peer.NewProducer(limit, clientTimeout, createFu)
-	address := newAddress()
+	address := utils.RandomAddress()
 	listener := network.TcpListener(address)
 	backend := newBackend(t, backConf, logger, address, done,
 		resp, 0, listener)

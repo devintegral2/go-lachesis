@@ -15,6 +15,7 @@ import (
 	"github.com/Fantom-foundation/go-lachesis/src/network"
 	"github.com/Fantom-foundation/go-lachesis/src/peer"
 	"github.com/Fantom-foundation/go-lachesis/src/poset"
+	"github.com/Fantom-foundation/go-lachesis/src/utils"
 )
 
 var (
@@ -191,7 +192,7 @@ func TestNewClient(t *testing.T) {
 	done := make(chan struct{})
 	defer close(done)
 
-	address := newAddress()
+	address := utils.RandomAddress()
 	listener := network.TcpListener(address)
 	backend := newBackend(t, conf, logger, address, done,
 		expSyncResponse, 0, listener)
@@ -235,7 +236,7 @@ func TestFakeNet(t *testing.T) {
 
 	// Create fake network
 
-	address := newAddress()
+	address := utils.RandomAddress()
 	listener := network.FakeListener(address)
 	backend := newBackend(t, conf, logger, address, done,
 		expSyncResponse, 0, listener)

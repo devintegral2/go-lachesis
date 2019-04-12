@@ -3,7 +3,6 @@ package peer_test
 import (
 	"context"
 	"net"
-	"strconv"
 	"testing"
 	"time"
 	
@@ -13,10 +12,6 @@ import (
 	"github.com/Fantom-foundation/go-lachesis/src/peer"
 	"github.com/Fantom-foundation/go-lachesis/src/utils"
 )
-
-func newAddress() string {
-	return "localhost:" + strconv.Itoa(int(utils.FreePort(peer.TCP)))
-}
 
 func newBackend(t *testing.T, conf *peer.BackendConfig,
 	logger logrus.FieldLogger, address string, done chan struct{},
@@ -63,7 +58,7 @@ func TestBackendClose(t *testing.T) {
 	result := make(chan error, reqNumber)
 	defer close(result)
 
-	address := newAddress()
+	address := utils.RandomAddress()
 	listener := network.TcpListener(address)
 	backend := newBackend(t, conf, logger, address, done,
 		expSyncResponse, srvTimeout, listener)

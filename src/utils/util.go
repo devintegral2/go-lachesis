@@ -57,6 +57,11 @@ func HashFromHex(s string) []byte {
 	return h
 }
 
+// RandomAddress creates random network address in the format address:port.
+func RandomAddress() string {
+	return "localhost:" + strconv.Itoa(int(FreePort("tcp")))
+}
+
 // FreePort gets free network port on host.
 func FreePort(network string) (port uint16) {
 	addr, err := net.ResolveTCPAddr(network, "localhost:0")
