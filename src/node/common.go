@@ -5,14 +5,14 @@ import (
 	"fmt"
 	"math/rand"
 	"time"
-
+	
 	"github.com/sirupsen/logrus"
 
 	"github.com/Fantom-foundation/go-lachesis/src/common"
 	"github.com/Fantom-foundation/go-lachesis/src/crypto"
 	"github.com/Fantom-foundation/go-lachesis/src/dummy"
+	"github.com/Fantom-foundation/go-lachesis/src/network"
 	"github.com/Fantom-foundation/go-lachesis/src/peer"
-	"github.com/Fantom-foundation/go-lachesis/src/peer/fakenet"
 	"github.com/Fantom-foundation/go-lachesis/src/peers"
 	"github.com/Fantom-foundation/go-lachesis/src/poset"
 )
@@ -28,11 +28,9 @@ func NewNodeList(count int, logger *logrus.Logger) NodeList {
 	syncBackConfig := peer.NewBackendConfig()
 
 	config.Logger = logger
-	network := fakenet.NewNetwork()
 	createFu := func(target string,
 		timeout time.Duration) (peer.SyncClient, error) {
-		rpcCli, err := peer.NewRPCClient(
-			peer.TCP, target, time.Second, network.CreateNetConn)
+		rpcCli, err := peer.NewRPCClient("fake", target, time.Second)
 		if err != nil {
 			return nil, err
 		}
@@ -56,9 +54,9 @@ func NewNodeList(count int, logger *logrus.Logger) NodeList {
 		key := keys[peer2]
 
 		producer := peer.NewProducer(config.CacheSize, time.Second, createFu)
-		backend := peer.NewBackend(
-			syncBackConfig, logger, network.CreateListener)
-		if err := backend.ListenAndServe(peer.TCP, peer2.NetAddr); err != nil {
+		listener := network.FakeListener(peer2.NetAddr)
+		backend := peer.NewBackend(syncBackConfig, logger, listener)
+		if err := backend.ListenAndServe(); err != nil {
 			logger.Panic(err)
 		}
 		transport := peer.NewTransport(logger, producer, backend)

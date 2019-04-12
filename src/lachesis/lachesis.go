@@ -3,14 +3,14 @@ package lachesis
 import (
 	"crypto/ecdsa"
 	"fmt"
-	"net"
 	"time"
-
+	
 	"github.com/sirupsen/logrus"
-
+	
 	"github.com/Fantom-foundation/go-lachesis/src/common"
 	"github.com/Fantom-foundation/go-lachesis/src/crypto"
 	"github.com/Fantom-foundation/go-lachesis/src/log"
+	"github.com/Fantom-foundation/go-lachesis/src/network"
 	"github.com/Fantom-foundation/go-lachesis/src/node"
 	"github.com/Fantom-foundation/go-lachesis/src/peer"
 	"github.com/Fantom-foundation/go-lachesis/src/peers"
@@ -41,8 +41,7 @@ func (l *Lachesis) initTransport() error {
 	createCliFu := func(target string,
 		timeout time.Duration) (peer.SyncClient, error) {
 
-		rpcCli, err := peer.NewRPCClient(
-			peer.TCP, target, time.Second, l.Config.ConnFunc)
+		rpcCli, err := peer.NewRPCClient(peer.TCP, target, time.Second)
 		if err != nil {
 			return nil, err
 		}
@@ -52,9 +51,9 @@ func (l *Lachesis) initTransport() error {
 
 	producer := peer.NewProducer(
 		l.Config.MaxPool, l.Config.NodeConfig.TCPTimeout, createCliFu)
-	backend := peer.NewBackend(
-		peer.NewBackendConfig(), l.Config.Logger, net.Listen)
-	if err := backend.ListenAndServe(peer.TCP, l.Config.BindAddr); err != nil {
+	listener := network.TcpListener(l.Config.BindAddr)
+	backend := peer.NewBackend(peer.NewBackendConfig(), l.Config.Logger, listener)
+	if err := backend.ListenAndServe(); err != nil {
 		return err
 	}
 	l.Transport = peer.NewTransport(l.Config.Logger, producer, backend)

@@ -6,9 +6,10 @@ import (
 	"strconv"
 	"testing"
 	"time"
-
+	
 	"github.com/sirupsen/logrus"
-
+	
+	"github.com/Fantom-foundation/go-lachesis/src/network"
 	"github.com/Fantom-foundation/go-lachesis/src/peer"
 	"github.com/Fantom-foundation/go-lachesis/src/utils"
 )
@@ -20,8 +21,8 @@ func newAddress() string {
 func newBackend(t *testing.T, conf *peer.BackendConfig,
 	logger logrus.FieldLogger, address string, done chan struct{},
 	resp interface{}, delay time.Duration,
-	listenerFunc peer.CreateListenerFunc) *peer.Backend {
-	backend := peer.NewBackend(conf, logger, listenerFunc)
+	listener net.Listener) *peer.Backend {
+	backend := peer.NewBackend(conf, logger, listener)
 	receiver := backend.ReceiverChannel()
 
 	go func() {
@@ -40,7 +41,7 @@ func newBackend(t *testing.T, conf *peer.BackendConfig,
 		}
 	}()
 
-	if err := backend.ListenAndServe(peer.TCP, address); err != nil {
+	if err := backend.ListenAndServe(); err != nil {
 		t.Fatal(err)
 	}
 
@@ -63,16 +64,16 @@ func TestBackendClose(t *testing.T) {
 	defer close(result)
 
 	address := newAddress()
+	listener := network.TcpListener(address)
 	backend := newBackend(t, conf, logger, address, done,
-		expSyncResponse, srvTimeout, net.Listen)
+		expSyncResponse, srvTimeout, listener)
 	defer func() {
 		if err := backend.Close(); err != nil {
 			panic(err)
 		}
 	}()
 
-	rpcCli, err := peer.NewRPCClient(
-		peer.TCP, address, time.Second, net.DialTimeout)
+	rpcCli, err := peer.NewRPCClient(peer.TCP, address, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}

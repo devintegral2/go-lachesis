@@ -37,7 +37,12 @@ func (c *Conn) Write(b []byte) (n int, err error) {
 // Close closes the connection.
 // Any blocked Read or Write operations will be unblocked and return errors.
 func (c *Conn) Close() error {
-	return c.output.Close()
+	err := c.output.Close()
+	if err == nil {
+		err = c.input.Close()
+	}
+	
+	return err
 }
 
 // LocalAddr returns the local network address.

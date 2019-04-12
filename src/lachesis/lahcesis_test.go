@@ -12,21 +12,20 @@ import (
 	"sync"
 	"testing"
 	"time"
-
+	
 	"github.com/Fantom-foundation/go-lachesis/src/common"
 	"github.com/Fantom-foundation/go-lachesis/src/crypto"
 	"github.com/Fantom-foundation/go-lachesis/src/dummy"
+	"github.com/Fantom-foundation/go-lachesis/src/network"
 	"github.com/Fantom-foundation/go-lachesis/src/node"
 	"github.com/Fantom-foundation/go-lachesis/src/peer"
-	"github.com/Fantom-foundation/go-lachesis/src/peer/fakenet"
 	"github.com/Fantom-foundation/go-lachesis/src/peers"
 	"github.com/Fantom-foundation/go-lachesis/src/poset"
 	"github.com/Fantom-foundation/go-lachesis/src/utils"
 	"github.com/sirupsen/logrus"
 )
 
-func initPeers(
-	number int, network *fakenet.Network) ([]*ecdsa.PrivateKey, *peers.Peers, []string) {
+func initPeers(number int) ([]*ecdsa.PrivateKey, *peers.Peers, []string) {
 	var keys []*ecdsa.PrivateKey
 	ps := peers.NewPeers()
 	var adds []string
@@ -46,12 +45,11 @@ func initPeers(
 	return keys, ps, adds
 }
 
-func createNetwork() (*fakenet.Network, peer.CreateSyncClientFunc) {
-	network := fakenet.NewNetwork()
+func createNetwork() (peer.CreateSyncClientFunc) {
 	createFu := func(target string,
 		timeout time.Duration) (peer.SyncClient, error) {
 		rpcCli, err := peer.NewRPCClient(
-			peer.TCP, target, time.Second, network.CreateNetConn)
+			"fake", target, time.Second)
 		if err != nil {
 			return nil, err
 		}
@@ -59,16 +57,17 @@ func createNetwork() (*fakenet.Network, peer.CreateSyncClientFunc) {
 		return peer.NewClient(rpcCli)
 	}
 
-	return network, createFu
+	return createFu
 }
 
 func createTransport(t testing.TB, logger logrus.FieldLogger,
 	backConf *peer.BackendConfig, addr string, poolSize int,
-	clientFu peer.CreateSyncClientFunc,
-	listenerFu peer.CreateListenerFunc) peer.SyncPeer {
+	clientFu peer.CreateSyncClientFunc) peer.SyncPeer {
 	producer1 := peer.NewProducer(poolSize, time.Second, clientFu)
-	backend1 := peer.NewBackend(backConf, logger, listenerFu)
-	if err := backend1.ListenAndServe(peer.TCP, addr); err != nil {
+
+	listener := network.FakeListener(addr)
+	backend1 := peer.NewBackend(backConf, logger, listener)
+	if err := backend1.ListenAndServe(); err != nil {
 		t.Fatal(err)
 	}
 	return peer.NewTransport(logger, producer1, backend1)
@@ -104,24 +103,24 @@ func TestGossip(t *testing.T) {
 	config := node.TestConfig(t)
 	backConfig := peer.NewBackendConfig()
 
-	network, createFu := createNetwork()
-	keys, p, adds := initPeers(4, network)
+	createFu := createNetwork()
+	keys, p, adds := initPeers(4)
 	ps := p.ToPeerSlice()
 
 	trans1 := createTransport(t, logger, backConfig, adds[0],
-		poolSize, createFu, network.CreateListener)
+		poolSize, createFu)
 	defer transportClose(t, trans1)
 
 	trans2 := createTransport(t, logger, backConfig, adds[1],
-		poolSize, createFu, network.CreateListener)
+		poolSize, createFu)
 	defer transportClose(t, trans2)
 
 	trans3 := createTransport(t, logger, backConfig, adds[2],
-		poolSize, createFu, network.CreateListener)
+		poolSize, createFu)
 	defer transportClose(t, trans3)
 
 	trans4 := createTransport(t, logger, backConfig, adds[3],
-		poolSize, createFu, network.CreateListener)
+		poolSize, createFu)
 	defer transportClose(t, trans4)
 
 	node1 := runNode(t, logger, config, ps[0].ID, keys[0], p, trans1, adds[0], true)
@@ -167,24 +166,24 @@ func TestMissingNodeGossip(t *testing.T) {
 	poolSize := 2
 	backConfig := peer.NewBackendConfig()
 
-	network, createFu := createNetwork()
-	keys, p, adds := initPeers(4, network)
+	createFu := createNetwork()
+	keys, p, adds := initPeers(4)
 	ps := p.ToPeerSlice()
 
 	trans1 := createTransport(t, logger, backConfig, adds[0],
-		poolSize, createFu, network.CreateListener)
+		poolSize, createFu)
 	defer transportClose(t, trans1)
 
 	trans2 := createTransport(t, logger, backConfig, adds[1],
-		poolSize, createFu, network.CreateListener)
+		poolSize, createFu)
 	defer transportClose(t, trans2)
 
 	trans3 := createTransport(t, logger, backConfig, adds[2],
-		poolSize, createFu, network.CreateListener)
+		poolSize, createFu)
 	defer transportClose(t, trans3)
 
 	trans4 := createTransport(t, logger, backConfig, adds[3],
-		poolSize, createFu, network.CreateListener)
+		poolSize, createFu)
 	defer transportClose(t, trans4)
 
 	node1 := runNode(t, logger, config, ps[0].ID, keys[0], p, trans1, adds[0], true)
@@ -213,24 +212,24 @@ func TestSyncLimit(t *testing.T) {
 	poolSize := 2
 	backConfig := peer.NewBackendConfig()
 
-	network, createFu := createNetwork()
-	keys, p, adds := initPeers(4, network)
+	createFu := createNetwork()
+	keys, p, adds := initPeers(4)
 	ps := p.ToPeerSlice()
 
 	trans1 := createTransport(t, logger, backConfig, adds[0],
-		poolSize, createFu, network.CreateListener)
+		poolSize, createFu)
 	defer transportClose(t, trans1)
 
 	trans2 := createTransport(t, logger, backConfig, adds[1],
-		poolSize, createFu, network.CreateListener)
+		poolSize, createFu)
 	defer transportClose(t, trans2)
 
 	trans3 := createTransport(t, logger, backConfig, adds[2],
-		poolSize, createFu, network.CreateListener)
+		poolSize, createFu)
 	defer transportClose(t, trans3)
 
 	trans4 := createTransport(t, logger, backConfig, adds[3],
-		poolSize, createFu, network.CreateListener)
+		poolSize, createFu)
 	defer transportClose(t, trans4)
 
 	node1 := runNode(t, logger, config, ps[0].ID, keys[0], p, trans1, adds[0], true)
@@ -292,21 +291,21 @@ func TestCatchUp(t *testing.T) {
 	poolSize := 2
 	backConfig := peer.NewBackendConfig()
 
-	network, createFu := createNetwork()
-	keys, p, adds := initPeers(4, network)
+	createFu := createNetwork()
+	keys, p, adds := initPeers(4)
 	ps := p.ToPeerSlice()
 
 	// Create  config for 4 nodes
 	trans1 := createTransport(t, logger, backConfig, adds[0],
-		poolSize, createFu, network.CreateListener)
+		poolSize, createFu)
 	defer transportClose(t, trans1)
 
 	trans2 := createTransport(t, logger, backConfig, adds[1],
-		poolSize, createFu, network.CreateListener)
+		poolSize, createFu)
 	defer transportClose(t, trans2)
 
 	trans3 := createTransport(t, logger, backConfig, adds[2],
-		poolSize, createFu, network.CreateListener)
+		poolSize, createFu)
 	defer transportClose(t, trans3)
 
 	// Initialize the first 3 nodes only
@@ -330,7 +329,7 @@ func TestCatchUp(t *testing.T) {
 	checkGossip(normalNodes, 0, t)
 
 	trans4 := createTransport(t, logger, backConfig, adds[3],
-		poolSize, createFu, network.CreateListener)
+		poolSize, createFu)
 	defer transportClose(t, trans4)
 
 	node4 := runNode(t, logger, config, ps[3].ID, keys[3], p, trans4, adds[3], false)
@@ -594,26 +593,26 @@ func BenchmarkGossip(b *testing.B) {
 	config := node.TestConfig(b)
 	poolSize := 2
 	backConfig := peer.NewBackendConfig()
-	network, createFu := createNetwork()
+	createFu := createNetwork()
 
 	for n := 0; n < b.N; n++ {
-		keys, p, adds := initPeers(4, network)
+		keys, p, adds := initPeers(4)
 		ps := p.ToPeerSlice()
 
 		trans1 := createTransport(b, logger, backConfig, adds[0],
-			poolSize, createFu, network.CreateListener)
+			poolSize, createFu)
 		defer transportClose(b, trans1)
 
 		trans2 := createTransport(b, logger, backConfig, adds[1],
-			poolSize, createFu, network.CreateListener)
+			poolSize, createFu)
 		defer transportClose(b, trans2)
 
 		trans3 := createTransport(b, logger, backConfig, adds[2],
-			poolSize, createFu, network.CreateListener)
+			poolSize, createFu)
 		defer transportClose(b, trans3)
 
 		trans4 := createTransport(b, logger, backConfig, adds[3],
-			poolSize, createFu, network.CreateListener)
+			poolSize, createFu)
 		defer transportClose(b, trans4)
 
 		node1 := runNode(b, logger, config, ps[0].ID, keys[0], p, trans1, adds[0], true)

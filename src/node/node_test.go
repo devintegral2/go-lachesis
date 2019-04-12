@@ -10,17 +10,17 @@ import (
 	"sync"
 	"testing"
 	"time"
-
+	
 	"github.com/sirupsen/logrus"
-
+	
 	"github.com/Fantom-foundation/go-lachesis/src/common"
 	"github.com/Fantom-foundation/go-lachesis/src/common/hexutil"
 	"github.com/Fantom-foundation/go-lachesis/src/crypto"
 	"github.com/Fantom-foundation/go-lachesis/src/dummy"
 	"github.com/Fantom-foundation/go-lachesis/src/inter"
 	"github.com/Fantom-foundation/go-lachesis/src/inter/wire"
+	"github.com/Fantom-foundation/go-lachesis/src/network"
 	"github.com/Fantom-foundation/go-lachesis/src/peer"
-	"github.com/Fantom-foundation/go-lachesis/src/peer/fakenet"
 	"github.com/Fantom-foundation/go-lachesis/src/peers"
 	"github.com/Fantom-foundation/go-lachesis/src/poset"
 )
@@ -30,7 +30,6 @@ type TestData struct {
 	Logger     *logrus.Logger
 	Config     *Config
 	BackConfig *peer.BackendConfig
-	Network    *fakenet.Network
 	CreateFu   peer.CreateSyncClientFunc
 	Keys       []*ecdsa.PrivateKey
 	Adds       []string
@@ -39,15 +38,14 @@ type TestData struct {
 }
 
 func InitTestData(t *testing.T, peersCount int, poolSize int) *TestData {
-	network, createFu := createNetwork()
-	keys, p, adds := initPeers(peersCount, network)
+	createFu := createNetwork()
+	keys, p, adds := initPeers(peersCount)
 
 	return &TestData{
 		PoolSize:   poolSize,
 		Logger:     common.NewTestLogger(t),
 		Config:     TestConfig(t),
 		BackConfig: peer.NewBackendConfig(),
-		Network:    network,
 		CreateFu:   createFu,
 		Keys:       keys,
 		Adds:       adds,
@@ -56,13 +54,10 @@ func InitTestData(t *testing.T, peersCount int, poolSize int) *TestData {
 	}
 }
 
-func initPeers(
-	number int, network *fakenet.Network) ([]*ecdsa.PrivateKey, *peers.Peers, []string) {
-
+func initPeers(number int) ([]*ecdsa.PrivateKey, *peers.Peers, []string) {
 	var keys []*ecdsa.PrivateKey
-	var adds []string
-
 	ps := peers.NewPeers()
+	var adds []string
 
 	for i := 0; i < number; i++ {
 		key, _ := crypto.GenerateECDSAKey()
@@ -79,14 +74,10 @@ func initPeers(
 	return keys, ps, adds
 }
 
-func createNetwork() (*fakenet.Network, peer.CreateSyncClientFunc) {
-	network := fakenet.NewNetwork()
-
+func createNetwork() (peer.CreateSyncClientFunc) {
 	createFu := func(target string,
 		timeout time.Duration) (peer.SyncClient, error) {
-
-		rpcCli, err := peer.NewRPCClient(
-			peer.TCP, target, time.Second, network.CreateNetConn)
+		rpcCli, err := peer.NewRPCClient("fake", target, time.Second)
 		if err != nil {
 			return nil, err
 		}
@@ -94,22 +85,21 @@ func createNetwork() (*fakenet.Network, peer.CreateSyncClientFunc) {
 		return peer.NewClient(rpcCli)
 	}
 
-	return network, createFu
+	return createFu
 }
 
-func createTransport(t *testing.T, logger logrus.FieldLogger,
+func createTransport(t testing.TB, logger logrus.FieldLogger,
 	backConf *peer.BackendConfig, addr string, poolSize int,
-	clientFu peer.CreateSyncClientFunc,
-	listenerFu peer.CreateListenerFunc) peer.SyncPeer {
+	clientFu peer.CreateSyncClientFunc) peer.SyncPeer {
+		
+	producer1 := peer.NewProducer(poolSize, time.Second, clientFu)
+	listener := network.FakeListener(addr)
 
-	producer := peer.NewProducer(poolSize, time.Second, clientFu)
-
-	backend := peer.NewBackend(backConf, logger, listenerFu)
-	if err := backend.ListenAndServe(peer.TCP, addr); err != nil {
+	backend1 := peer.NewBackend(backConf, logger, listener)
+	if err := backend1.ListenAndServe(); err != nil {
 		t.Fatal(err)
 	}
-
-	return peer.NewTransport(logger, producer, backend)
+	return peer.NewTransport(logger, producer1, backend1)
 }
 
 func transportClose(t *testing.T, syncPeer peer.SyncPeer) {
@@ -252,12 +242,12 @@ func recycleNode(oldNode *Node, logger *logrus.Logger, t *testing.T) *Node {
 	}
 
 	backConfig := peer.NewBackendConfig()
-	network, createFu := createNetwork()
+	createFu := createNetwork()
 	p := ps.ToPeerSlice()
 
 	// Create transport
 	trans := createTransport(t, logger, backConfig, p[0].NetAddr,
-		2, createFu, network.CreateListener)
+		2, createFu)
 	defer transportClose(t, trans)
 
 	prox := dummy.NewInmemDummyApp(logger)
@@ -317,7 +307,7 @@ func TestCreateAndInitNode(t *testing.T) {
 
 	// Create transport
 	trans := createTransport(t, data.Logger, data.BackConfig, data.Adds[0],
-		data.PoolSize, data.CreateFu, data.Network.CreateListener)
+		data.PoolSize, data.CreateFu)
 	defer transportClose(t, trans)
 
 	// Create & Init node
@@ -355,7 +345,7 @@ func TestAddTransaction(t *testing.T) {
 
 	// Create transport
 	trans := createTransport(t, data.Logger, data.BackConfig, data.Adds[0],
-		data.PoolSize, data.CreateFu, data.Network.CreateListener)
+		data.PoolSize, data.CreateFu)
 	defer transportClose(t, trans)
 
 	// Create & Init node
@@ -392,7 +382,7 @@ func TestCommit(t *testing.T) {
 
 	// Create transport
 	trans := createTransport(t, data.Logger, data.BackConfig, data.Adds[0],
-		data.PoolSize, data.CreateFu, data.Network.CreateListener)
+		data.PoolSize, data.CreateFu)
 	defer transportClose(t, trans)
 
 	// Create & Init node
@@ -433,7 +423,7 @@ func TestDoBackgroundWork(t *testing.T) {
 
 	// Create transport
 	trans := createTransport(t, data.Logger, data.BackConfig, data.Adds[0],
-		data.PoolSize, data.CreateFu, data.Network.CreateListener)
+		data.PoolSize, data.CreateFu)
 	defer transportClose(t, trans)
 
 	// Create & Init node
@@ -506,11 +496,11 @@ func TestSyncAndRequestSync(t *testing.T) {
 
 	// Create transport
 	trans1 := createTransport(t, data.Logger, data.BackConfig, data.Adds[0],
-		data.PoolSize, data.CreateFu, data.Network.CreateListener)
+		data.PoolSize, data.CreateFu)
 	defer transportClose(t, trans1)
 
 	trans2 := createTransport(t, data.Logger, data.BackConfig, data.Adds[1],
-		data.PoolSize, data.CreateFu, data.Network.CreateListener)
+		data.PoolSize, data.CreateFu)
 	defer transportClose(t, trans2)
 
 	// Create & Init node
@@ -565,11 +555,11 @@ func TestRequestEagerSyncAndEventDiff(t *testing.T) {
 
 	// Create transport
 	trans1 := createTransport(t, data.Logger, data.BackConfig, data.Adds[0],
-		data.PoolSize, data.CreateFu, data.Network.CreateListener)
+		data.PoolSize, data.CreateFu)
 	defer transportClose(t, trans1)
 
 	trans2 := createTransport(t, data.Logger, data.BackConfig, data.Adds[1],
-		data.PoolSize, data.CreateFu, data.Network.CreateListener)
+		data.PoolSize, data.CreateFu)
 	defer transportClose(t, trans2)
 
 	// Create & Init node
@@ -620,11 +610,11 @@ func TestRequestFastForward(t *testing.T) {
 
 	// Create transport
 	trans1 := createTransport(t, data.Logger, data.BackConfig, data.Adds[0],
-		data.PoolSize, data.CreateFu, data.Network.CreateListener)
+		data.PoolSize, data.CreateFu)
 	defer transportClose(t, trans1)
 
 	trans2 := createTransport(t, data.Logger, data.BackConfig, data.Adds[1],
-		data.PoolSize, data.CreateFu, data.Network.CreateListener)
+		data.PoolSize, data.CreateFu)
 	defer transportClose(t, trans2)
 
 	// Create & Init node
@@ -744,19 +734,19 @@ func TestFastForward(t *testing.T) {
 
 	// Create transport
 	trans1 := createTransport(t, data.Logger, data.BackConfig, data.Adds[0],
-		data.PoolSize, data.CreateFu, data.Network.CreateListener)
+		data.PoolSize, data.CreateFu)
 	defer transportClose(t, trans1)
 
 	trans2 := createTransport(t, data.Logger, data.BackConfig, data.Adds[1],
-		data.PoolSize, data.CreateFu, data.Network.CreateListener)
+		data.PoolSize, data.CreateFu)
 	defer transportClose(t, trans2)
 
 	trans3 := createTransport(t, data.Logger, data.BackConfig, data.Adds[2],
-		data.PoolSize, data.CreateFu, data.Network.CreateListener)
+		data.PoolSize, data.CreateFu)
 	defer transportClose(t, trans3)
 
 	trans4 := createTransport(t, data.Logger, data.BackConfig, data.Adds[3],
-		data.PoolSize, data.CreateFu, data.Network.CreateListener)
+		data.PoolSize, data.CreateFu)
 	defer transportClose(t, trans4)
 
 	// Create & Init node
@@ -814,24 +804,24 @@ func TestFastSync(t *testing.T) {
 	config := TestConfig(t)
 	backConfig := peer.NewBackendConfig()
 
-	network, createFu := createNetwork()
-	keys, p, adds := initPeers(4, network)
+	createFu := createNetwork()
+	keys, p, adds := initPeers(4)
 	ps := p.ToPeerSlice()
 
 	trans1 := createTransport(t, logger, backConfig, adds[0],
-		poolSize, createFu, network.CreateListener)
+		poolSize, createFu)
 	defer transportClose(t, trans1)
 
 	trans2 := createTransport(t, logger, backConfig, adds[1],
-		poolSize, createFu, network.CreateListener)
+		poolSize, createFu)
 	defer transportClose(t, trans2)
 
 	trans3 := createTransport(t, logger, backConfig, adds[2],
-		poolSize, createFu, network.CreateListener)
+		poolSize, createFu)
 	defer transportClose(t, trans3)
 
 	trans4 := createTransport(t, logger, backConfig, adds[3],
-		poolSize, createFu, network.CreateListener)
+		poolSize, createFu)
 	defer transportClose(t, trans4)
 
 	node1 := createNode(t, logger, config, ps[0].ID, keys[0], p, trans1, adds[0], true)
@@ -926,24 +916,24 @@ func TestBootstrapAllNodes(t *testing.T) {
 	poolSize := 2
 	backConfig := peer.NewBackendConfig()
 
-	network, createFu := createNetwork()
-	keys, p, adds := initPeers(4, network)
+	createFu := createNetwork()
+	keys, p, adds := initPeers(4)
 	ps := p.ToPeerSlice()
 
 	trans1 := createTransport(t, logger, backConfig, adds[0],
-		poolSize, createFu, network.CreateListener)
+		poolSize, createFu)
 	defer transportClose(t, trans1)
 
 	trans2 := createTransport(t, logger, backConfig, adds[1],
-		poolSize, createFu, network.CreateListener)
+		poolSize, createFu)
 	defer transportClose(t, trans2)
 
 	trans3 := createTransport(t, logger, backConfig, adds[2],
-		poolSize, createFu, network.CreateListener)
+		poolSize, createFu)
 	defer transportClose(t, trans3)
 
 	trans4 := createTransport(t, logger, backConfig, adds[3],
-		poolSize, createFu, network.CreateListener)
+		poolSize, createFu)
 	defer transportClose(t, trans4)
 
 	node1 := createNode(t, logger, config, ps[0].ID, keys[0], p, trans1, adds[0], true)
@@ -997,24 +987,24 @@ func TestShutdown(t *testing.T) {
 	poolSize := 2
 	backConfig := peer.NewBackendConfig()
 
-	network, createFu := createNetwork()
-	keys, p, adds := initPeers(4, network)
+	createFu := createNetwork()
+	keys, p, adds := initPeers(4)
 	ps := p.ToPeerSlice()
 
 	trans1 := createTransport(t, logger, backConfig, adds[0],
-		poolSize, createFu, network.CreateListener)
+		poolSize, createFu)
 	defer transportClose(t, trans1)
 
 	trans2 := createTransport(t, logger, backConfig, adds[1],
-		poolSize, createFu, network.CreateListener)
+		poolSize, createFu)
 	defer transportClose(t, trans2)
 
 	trans3 := createTransport(t, logger, backConfig, adds[2],
-		poolSize, createFu, network.CreateListener)
+		poolSize, createFu)
 	defer transportClose(t, trans3)
 
 	trans4 := createTransport(t, logger, backConfig, adds[3],
-		poolSize, createFu, network.CreateListener)
+		poolSize, createFu)
 	defer transportClose(t, trans4)
 
 	node1 := createNode(t, logger, config, ps[0].ID, keys[0], p, trans1, adds[0], false)
