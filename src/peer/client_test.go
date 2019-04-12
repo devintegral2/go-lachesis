@@ -245,7 +245,7 @@ func TestFakeNet(t *testing.T) {
 		}
 	}()
 
-	rpcCli, err := peer.NewRPCClient("fake", address, time.Second)
+	rpcCli, err := peer.NewRPCClient(peer.Fake, address, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	}

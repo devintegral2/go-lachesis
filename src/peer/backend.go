@@ -17,6 +17,8 @@ const (
 	lachesis = "Lachesis"
 	// TCP is a Transmission Control Protocol.
 	TCP = "tcp"
+	// Fake using by fakenet
+	Fake = "fake"
 )
 
 // CreateListenerFunc creates a new network listener.

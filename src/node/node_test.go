@@ -77,7 +77,7 @@ func initPeers(number int) ([]*ecdsa.PrivateKey, *peers.Peers, []string) {
 func createNetwork() (peer.CreateSyncClientFunc) {
 	createFu := func(target string,
 		timeout time.Duration) (peer.SyncClient, error) {
-		rpcCli, err := peer.NewRPCClient("fake", target, time.Second)
+		rpcCli, err := peer.NewRPCClient(peer.Fake, target, time.Second)
 		if err != nil {
 			return nil, err
 		}

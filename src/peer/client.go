@@ -43,7 +43,7 @@ type Client struct {
 // NewRPCClient creates new RPC client.
 func NewRPCClient(typeNetwork, address string, timeout time.Duration) (*rpc.Client, error) {
 	
-	if typeNetwork == "fake" {
+	if typeNetwork == Fake {
 		conn, err := network.FakeDialer("127.0.0.1")(context.Background(), address)
 		if err != nil {
 			return nil, err
