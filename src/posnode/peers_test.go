@@ -9,8 +9,7 @@ import (
 )
 
 func TestPeerReadyForReq(t *testing.T) {
-	store := NewMemStore()
-	node := NewForTests("node0", store, nil)
+	node := NewForTests("node0", NewMemStore(), nil)
 	node.initPeers()
 
 	t.Run("new host", func(t *testing.T) {
@@ -47,8 +46,7 @@ func TestPeerReadyForReq(t *testing.T) {
 }
 
 func TestPeerUnknown(t *testing.T) {
-	store := NewMemStore()
-	node := NewForTests("node0", store, nil)
+	node := NewForTests("node0", NewMemStore(), nil)
 	node.initPeers()
 
 	t.Run("last success", func(t *testing.T) {
@@ -60,7 +58,7 @@ func TestPeerUnknown(t *testing.T) {
 				LastSuccess: time.Now().Truncate(node.conf.DiscoveryTimeout),
 			},
 		}
-		node.peers.peers[peer.ID] = peer
+		node.peers.ids[peer.ID] = peer
 
 		assert.False(node.PeerUnknown(&peer.ID))
 	})
@@ -74,7 +72,7 @@ func TestPeerUnknown(t *testing.T) {
 				LastSuccess: time.Now(),
 			},
 		}
-		node.peers.peers[peer.ID] = peer
+		node.peers.ids[peer.ID] = peer
 
 		assert.False(node.PeerUnknown(&peer.ID))
 	})

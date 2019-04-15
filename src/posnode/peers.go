@@ -14,7 +14,7 @@ const peersCount = 10
 type peers struct {
 	top       []hash.Peer
 	unordered bool
-	peers     map[hash.Peer]*peerAttr
+	ids       map[hash.Peer]*peerAttr
 	hosts     map[string]*hostAttr
 
 	sync.RWMutex
@@ -35,13 +35,13 @@ func (pp *peers) attrByID(id hash.Peer) *peerAttr {
 		return nil
 	}
 
-	attr := pp.peers[id]
+	attr := pp.ids[id]
 	if attr == nil {
 		attr = &peerAttr{
 			ID:   id,
 			Host: &hostAttr{},
 		}
-		pp.peers[id] = attr
+		pp.ids[id] = attr
 	}
 	return attr
 }
@@ -72,13 +72,17 @@ func (n *Node) initPeers() {
 		n.store.SetTopPeers(n.peers.top)
 	}
 
-	n.peers.peers = make(map[hash.Peer]*peerAttr)
+	n.peers.ids = make(map[hash.Peer]*peerAttr)
 	n.peers.hosts = make(map[string]*hostAttr)
 }
 
 // UsedAsParent sets peer as previously used as
 // parent.
 func (n *Node) UsedAsParent(id hash.Peer) {
+	if id.IsEmpty() {
+		return
+	}
+
 	n.peers.Lock()
 	defer n.peers.Unlock()
 
@@ -89,6 +93,10 @@ func (n *Node) UsedAsParent(id hash.Peer) {
 // GotNewEvent updates when new event received
 // for peer.
 func (n *Node) GotNewEvent(id hash.Peer) {
+	if id.IsEmpty() {
+		return
+	}
+
 	n.peers.Lock()
 	defer n.peers.Unlock()
 
@@ -98,6 +106,10 @@ func (n *Node) GotNewEvent(id hash.Peer) {
 
 // ConnectOK counts successful connections to peer.
 func (n *Node) ConnectOK(p *Peer) {
+	if p == nil {
+		return
+	}
+
 	n.peers.Lock()
 	defer n.peers.Unlock()
 
@@ -134,6 +146,10 @@ func (n *Node) ConnectOK(p *Peer) {
 func (n *Node) ConnectFail(p *Peer, err error) {
 	n.log.Warn(err)
 
+	if p == nil {
+		return
+	}
+
 	n.peers.Lock()
 	defer n.peers.Unlock()
 
@@ -150,8 +166,11 @@ func (n *Node) ConnectFail(p *Peer, err error) {
 }
 
 // PeerReadyForReq returns false if peer is not ready for request.
-// TODO: test it
 func (n *Node) PeerReadyForReq(host string) bool {
+	if host == "" {
+		return false
+	}
+	
 	n.peers.RLock()
 	defer n.peers.RUnlock()
 
@@ -195,7 +214,7 @@ func (n *Node) NextForGossip() *Peer {
 		if len(n.peers.top) > peersCount {
 			tail := n.peers.top[peersCount:]
 			for _, id := range tail {
-				delete(n.peers.peers, id)
+				delete(n.peers.ids, id)
 			}
 			n.peers.top = n.peers.top[:peersCount]
 			n.peers.save()
