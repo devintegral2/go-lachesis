@@ -1,7 +1,6 @@
 package posnode
 
 import (
-	"crypto/ecdsa"
 	"sort"
 	"testing"
 	"time"
@@ -9,6 +8,7 @@ import (
 	"github.com/golang/mock/gomock"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/Fantom-foundation/go-lachesis/src/common"
 	"github.com/Fantom-foundation/go-lachesis/src/hash"
 	"github.com/Fantom-foundation/go-lachesis/src/inter"
 )
@@ -93,24 +93,29 @@ func Test_emitterEvaluation(t *testing.T) {
 	defer ctrl.Finish()
 
 	consensus := NewMockConsensus(ctrl)
+
 	store := NewMemStore()
 	node := NewForTests("server.fake", store, consensus)
 
 	peer1 := Peer{
 		ID:     hash.HexToPeer("1"),
 		Host:   "host1",
-		PubKey: &ecdsa.PublicKey{},
+		PubKey: &common.PublicKey{},
 	}
 	peer2 := Peer{
 		ID:     hash.HexToPeer("2"),
 		Host:   "host2",
-		PubKey: &ecdsa.PublicKey{},
+		PubKey: &common.PublicKey{},
 	}
 	peer3 := Peer{
 		ID:     hash.HexToPeer("3"),
 		Host:   "host3",
-		PubKey: &ecdsa.PublicKey{},
+		PubKey: &common.PublicKey{},
 	}
+
+	consensus.EXPECT().GetStakeOf(peer1.ID).Return(float64(1)).AnyTimes()
+	consensus.EXPECT().GetStakeOf(peer2.ID).Return(float64(2)).AnyTimes()
+	consensus.EXPECT().GetStakeOf(peer3.ID).Return(float64(3)).AnyTimes()
 
 	store.BootstrapPeers(&peer1, &peer2, &peer3)
 	node.initPeers()
@@ -121,7 +126,6 @@ func Test_emitterEvaluation(t *testing.T) {
 	t.Run("last used", func(t *testing.T) {
 		assert := assert.New(t)
 
-		consensus.EXPECT().GetStakeOf(gomock.Any()).Times(6)
 		node.peers.ids[peer1.ID].LastUsed = time.Now().Add(2 * time.Hour)
 		node.peers.ids[peer2.ID].LastUsed = time.Now().Add(time.Hour)
 		node.peers.ids[peer3.ID].LastUsed = time.Now()
@@ -137,7 +141,7 @@ func Test_emitterEvaluation(t *testing.T) {
 	t.Run("last event", func(t *testing.T) {
 		assert := assert.New(t)
 
-		consensus.EXPECT().GetStakeOf(gomock.Any()).Times(6)
+
 		node.peers.ids[peer3.ID].LastEvent = time.Now().Add(2 * time.Hour)
 		node.peers.ids[peer2.ID].LastEvent = time.Now().Add(time.Hour)
 		node.peers.ids[peer1.ID].LastEvent = time.Now()
@@ -152,10 +156,6 @@ func Test_emitterEvaluation(t *testing.T) {
 
 	t.Run("balance", func(t *testing.T) {
 		assert := assert.New(t)
-
-		consensus.EXPECT().GetStakeOf(peer1.ID).Return(float64(1)).Times(2)
-		consensus.EXPECT().GetStakeOf(peer2.ID).Return(float64(2)).Times(2)
-		consensus.EXPECT().GetStakeOf(peer3.ID).Return(float64(3)).Times(2)
 
 		e := node.emitterEvaluation(node.Snapshot())
 		sort.Sort(e)

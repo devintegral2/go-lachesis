@@ -24,6 +24,7 @@ func (n *Node) StartEventEmission() {
 		return
 	}
 	n.emitter.done = make(chan struct{})
+	done := n.emitter.done
 
 	go func() {
 		ticker := time.NewTicker(n.conf.EmitInterval)
@@ -31,7 +32,7 @@ func (n *Node) StartEventEmission() {
 			select {
 			case <-ticker.C:
 				n.EmitEvent()
-			case <-n.emitter.done:
+			case <-done:
 				return
 			}
 		}
@@ -40,6 +41,10 @@ func (n *Node) StartEventEmission() {
 
 // StopEventEmission stops event emission.
 func (n *Node) StopEventEmission() {
+	if n.emitter.done == nil {
+		return
+	}
+
 	close(n.emitter.done)
 	n.emitter.done = nil
 }
@@ -168,27 +173,10 @@ func (e *emitterEvaluation) Swap(i, j int) {
 // Less reports whether the element with
 // index i should sort before the element with index j.
 func (e *emitterEvaluation) Less(i, j int) bool {
-	var weightI, weightJ int
-	attrI := e.node.peers.attrByID(e.peers[i])
-	attrJ := e.node.peers.attrByID(e.peers[j])
+	a := e.node.peers.attrByID(e.peers[i])
+	b := e.node.peers.attrByID(e.peers[j])
 
-	if attrI.LastUsed.Before(attrJ.LastUsed) {
-		weightI = weightI + 1
-		weightJ = weightJ - 1
-	}
-
-	if attrI.LastEvent.After(attrJ.LastEvent) {
-		weightI = weightI + 1
-		weightJ = weightJ - 1
-	}
-
-	balanceI := e.node.consensus.GetStakeOf(e.peers[i])
-	balanceJ := e.node.consensus.GetStakeOf(e.peers[j])
-
-	if balanceI > balanceJ {
-		weightI = weightI + 1
-		weightJ = weightJ - 1
-	}
-
-	return weightI > weightJ
+	return a.LastUsed.Before(b.LastUsed) ||
+		a.LastEvent.After(b.LastEvent) ||
+		e.node.consensus.GetStakeOf(e.peers[i]) < e.node.consensus.GetStakeOf(e.peers[j])
 }
