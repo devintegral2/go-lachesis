@@ -29,7 +29,7 @@ type (
 		Busy      bool
 		LastEvent time.Time
 		LastUsed  time.Time
-		Host      *hostAttr
+		Host      string
 	}
 )
 

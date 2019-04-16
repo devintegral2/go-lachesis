@@ -52,12 +52,17 @@ func TestPeerUnknown(t *testing.T) {
 	t.Run("last success", func(t *testing.T) {
 		assert := assert.New(t)
 
-		peer := &peerAttr{
-			ID: hash.FakePeer(),
-			Host: &hostAttr{
-				LastSuccess: time.Now().Truncate(node.conf.DiscoveryTimeout),
-			},
+		host := &hostAttr{
+			Name:        node.Host(),
+			LastSuccess: time.Now().Truncate(node.conf.DiscoveryTimeout),
 		}
+
+		peer := &peerAttr{
+			ID:   hash.FakePeer(),
+			Host: host.Name,
+		}
+
+		node.peers.hosts[host.Name] = host
 		node.peers.ids[peer.ID] = peer
 
 		assert.False(node.PeerUnknown(&peer.ID))
@@ -66,12 +71,17 @@ func TestPeerUnknown(t *testing.T) {
 	t.Run("peer known", func(t *testing.T) {
 		assert := assert.New(t)
 
-		peer := &peerAttr{
-			ID: hash.FakePeer(),
-			Host: &hostAttr{
-				LastSuccess: time.Now(),
-			},
+		host := &hostAttr{
+			Name:        node.Host(),
+			LastSuccess: time.Now(),
 		}
+
+		peer := &peerAttr{
+			ID:   hash.FakePeer(),
+			Host: host.Name,
+		}
+
+		node.peers.hosts[host.Name] = host
 		node.peers.ids[peer.ID] = peer
 
 		assert.False(node.PeerUnknown(&peer.ID))

@@ -38,8 +38,7 @@ func (pp *peers) attrByID(id hash.Peer) *peerAttr {
 	attr := pp.ids[id]
 	if attr == nil {
 		attr = &peerAttr{
-			ID:   id,
-			Host: &hostAttr{},
+			ID: id,
 		}
 		pp.ids[id] = attr
 	}
@@ -120,7 +119,7 @@ func (n *Node) ConnectOK(p *Peer) {
 	if peer == nil {
 		return
 	}
-	peer.Host = host
+	peer.Host = host.Name
 
 	stored := n.store.GetPeer(p.ID)
 	if stored == nil {
@@ -160,7 +159,7 @@ func (n *Node) ConnectFail(p *Peer, err error) {
 	if peer == nil {
 		return
 	}
-	peer.Host = host
+	peer.Host = host.Name
 
 	n.peers.unordered = true
 }
@@ -170,15 +169,16 @@ func (n *Node) PeerReadyForReq(host string) bool {
 	if host == "" {
 		return false
 	}
-	
+
 	n.peers.RLock()
 	defer n.peers.RUnlock()
 
 	attr := n.peers.attrByHost(host)
 
+	discovery := time.Now().Add(-n.conf.DiscoveryTimeout)
+
 	return attr != nil &&
-		(attr.LastFail.Before(attr.LastSuccess) ||
-			attr.LastFail.Before(time.Now().Add(-n.conf.DiscoveryTimeout)))
+		(attr.LastFail.Before(attr.LastSuccess) || attr.LastFail.Before(discovery))
 }
 
 // PeerUnknown returns true if peer should be discovered.
@@ -190,11 +190,12 @@ func (n *Node) PeerUnknown(id *hash.Peer) bool {
 	n.peers.RLock()
 	defer n.peers.RUnlock()
 
-	attr := n.peers.attrByID(*id).Host
+	attr := n.peers.attrByHost(n.peers.attrByID(*id).Host)
+
+	discovery := time.Now().Add(-n.conf.DiscoveryTimeout)
 
 	return attr == nil ||
-		(attr.LastSuccess.Before(time.Now().Add(-n.conf.DiscoveryTimeout)) &&
-			attr.LastFail.Before(time.Now().Add(-n.conf.DiscoveryTimeout)))
+		(attr.LastSuccess.Before(discovery) && attr.LastFail.Before(discovery))
 }
 
 // NextForGossip returns the best candidate to gossip with and marks it as busy.

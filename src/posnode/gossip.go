@@ -248,8 +248,8 @@ func (n *gossipEvaluation) Swap(i, j int) {
 // Less reports whether the element with
 // index i should sort before the element with index j.
 func (n *gossipEvaluation) Less(i, j int) bool {
-	a := n.peers.attrByID(n.peers.top[i]).Host
-	b := n.peers.attrByID(n.peers.top[j]).Host
+	a := n.peers.attrByHost(n.peers.attrByID(n.peers.top[i]).Host)
+	b := n.peers.attrByHost(n.peers.attrByID(n.peers.top[j]).Host)
 
 	if a.LastSuccess.After(a.LastFail) && !b.LastSuccess.After(b.LastFail) {
 		return true

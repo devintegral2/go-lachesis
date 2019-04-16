@@ -141,7 +141,6 @@ func Test_emitterEvaluation(t *testing.T) {
 	t.Run("last event", func(t *testing.T) {
 		assert := assert.New(t)
 
-
 		node.peers.ids[peer3.ID].LastEvent = time.Now().Add(2 * time.Hour)
 		node.peers.ids[peer2.ID].LastEvent = time.Now().Add(time.Hour)
 		node.peers.ids[peer1.ID].LastEvent = time.Now()
