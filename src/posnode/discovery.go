@@ -3,12 +3,17 @@ package posnode
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
 	"github.com/Fantom-foundation/go-lachesis/src/hash"
 	"github.com/Fantom-foundation/go-lachesis/src/posnode/api"
+)
+
+const (
+	discoveryIdle = time.Second * 5
 )
 
 type (
@@ -43,6 +48,10 @@ func (n *Node) StartDiscovery() {
 			select {
 			case task := <-n.discovery.tasks:
 				n.AskPeerInfo(task.source, task.host, task.unknown)
+			case <-time.After(discoveryIdle):
+				if host := n.NextBuiltInPeer(); host != "" {
+					n.AskPeerInfo(hash.EmptyPeer, host, nil)
+				}
 			case <-done:
 				return
 			}
@@ -86,13 +95,16 @@ func (n *Node) AskPeerInfo(source hash.Peer, host string, id *hash.Peer) {
 		return
 	}
 
+	n.log.Debugf("ask %s about peer %s", host, id)
+
 	peer := &Peer{Host: host}
 
-	client, err := n.ConnectTo(peer)
+	client, free, err := n.ConnectTo(peer)
 	if err != nil {
 		n.ConnectFail(peer, err)
 		return
 	}
+	defer free()
 
 	info, err := n.requestPeerInfo(client, id)
 	if err != nil {
