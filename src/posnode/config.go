@@ -2,8 +2,11 @@ package posnode
 
 import (
 	"net"
+	"path/filepath"
 	"strconv"
 	"time"
+
+	"github.com/Fantom-foundation/go-lachesis/src/utils"
 )
 
 // Config is a set of nodes params.
@@ -23,6 +26,10 @@ type Config struct {
 
 // DefaultConfig returns default config.
 func DefaultConfig() *Config {
+	dataDir := utils.DefaultDataDir()
+
+	certPath := filepath.Join(dataDir, "certs")
+
 	return &Config{
 		EventParentsCount: 3,
 		Port:              55555,
@@ -34,7 +41,7 @@ func DefaultConfig() *Config {
 		ConnectTimeout: 15 * time.Second,
 		ClientTimeout:  15 * time.Second,
 
-		CertPath: "../../certs/",
+		CertPath: certPath,
 	}
 }
 

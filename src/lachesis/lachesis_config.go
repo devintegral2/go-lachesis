@@ -3,18 +3,16 @@ package lachesis
 import (
 	"crypto/ecdsa"
 	"net"
-	"os"
-	"os/user"
 	"path/filepath"
-	"runtime"
-
+	
 	"github.com/sirupsen/logrus"
-
+	
 	"github.com/Fantom-foundation/go-lachesis/src/log"
 	"github.com/Fantom-foundation/go-lachesis/src/node"
 	"github.com/Fantom-foundation/go-lachesis/src/peer"
 	"github.com/Fantom-foundation/go-lachesis/src/pos"
 	"github.com/Fantom-foundation/go-lachesis/src/proxy"
+	"github.com/Fantom-foundation/go-lachesis/src/utils"
 )
 
 type LachesisConfig struct {
@@ -43,7 +41,7 @@ type LachesisConfig struct {
 
 func NewDefaultConfig() *LachesisConfig {
 	config := &LachesisConfig{
-		DataDir:     DefaultDataDir(),
+		DataDir:     utils.DefaultDataDir(),
 		BindAddr:    ":1337",
 		ServiceAddr: ":8000",
 		ServiceOnly: false,
@@ -72,42 +70,8 @@ func NewDefaultConfig() *LachesisConfig {
 	return config
 }
 
-func DefaultBadgerDir() string {
-	dataDir := DefaultDataDir()
-	if dataDir != "" {
-		return filepath.Join(dataDir, "badger_db")
-	}
-	return ""
-}
-
 func (c *LachesisConfig) BadgerDir() string {
 	return filepath.Join(c.DataDir, "badger_db")
-}
-
-func DefaultDataDir() string {
-	// Try to place the data folder in the user's home dir
-	home := HomeDir()
-	if home != "" {
-		if runtime.GOOS == "darwin" {
-			return filepath.Join(home, ".lachesis")
-		} else if runtime.GOOS == "windows" {
-			return filepath.Join(home, "AppData", "Roaming", "LACHESIS")
-		} else {
-			return filepath.Join(home, ".lachesis")
-		}
-	}
-	// As we cannot guess a stable location, return empty and handle later
-	return ""
-}
-
-func HomeDir() string {
-	if home := os.Getenv("HOME"); home != "" {
-		return home
-	}
-	if usr, err := user.Current(); err == nil {
-		return usr.HomeDir
-	}
-	return ""
 }
 
 func LogLevel(l string) logrus.Level {
