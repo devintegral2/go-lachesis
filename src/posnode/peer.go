@@ -14,6 +14,7 @@ type (
 		ID     hash.Peer
 		PubKey *common.PublicKey
 		Host   string
+		Cert   []byte
 	}
 
 	// hostAttr contains temporary attributes of host.
@@ -39,6 +40,7 @@ func (p *Peer) ToWire() *api.PeerInfo {
 		ID:     p.ID.Hex(),
 		PubKey: p.PubKey.Bytes(),
 		Host:   p.Host,
+		Cert:   p.Cert,
 	}
 }
 
@@ -51,6 +53,7 @@ func WireToPeer(w *api.PeerInfo) *Peer {
 		ID:     hash.HexToPeer(w.ID),
 		PubKey: common.BytesToPubkey(w.PubKey),
 		Host:   w.Host,
+		Cert:   w.Cert,
 	}
 }
 

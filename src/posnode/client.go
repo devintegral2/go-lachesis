@@ -2,9 +2,12 @@ package posnode
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 
 	"github.com/Fantom-foundation/go-lachesis/src/posnode/api"
 )
@@ -24,8 +27,13 @@ func (n *Node) ConnectTo(peer *Peer) (api.NodeClient, func(), error) {
 
 	addr := n.NetAddrOf(peer.Host)
 	n.log.Debugf("connect to %s", addr)
-	// TODO: secure connection
-	conn, err := grpc.DialContext(ctx, addr, append(n.client.opts, grpc.WithInsecure(), grpc.WithBlock())...)
+
+	cp := x509.NewCertPool()
+	cp.AppendCertsFromPEM(peer.Cert)
+
+	creds := credentials.NewTLS(&tls.Config{ServerName: "", RootCAs: cp})
+
+	conn, err := grpc.DialContext(ctx, addr, append(n.client.opts, grpc.WithTransportCredentials(creds), grpc.WithBlock())...)
 	if err != nil {
 		n.log.Warn(errors.Wrapf(err, "connect to: %s", addr))
 		return nil, nil, err

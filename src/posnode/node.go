@@ -14,6 +14,7 @@ type Node struct {
 	ID        hash.Peer
 	key       *common.PrivateKey
 	pub       *common.PublicKey
+	cert      []byte
 	store     *Store
 	consensus Consensus
 	host      string
@@ -41,10 +42,16 @@ func New(host string, key *common.PrivateKey, s *Store, c Consensus, conf *Confi
 		conf = DefaultConfig()
 	}
 
+	cert, err := crypto.CreateCert(key, host, conf.CertPath)
+	if err != nil {
+		panic(err)
+	}
+
 	n := Node{
 		ID:        hash.PeerOfPubkey(key.Public()),
 		key:       key,
 		pub:       key.Public(),
+		cert:      cert,
 		store:     s,
 		consensus: c,
 		host:      host,
@@ -90,6 +97,7 @@ func (n *Node) AsPeer() *Peer {
 		ID:     n.ID,
 		PubKey: n.pub,
 		Host:   n.host,
+		Cert:   n.cert,
 	}
 }
 

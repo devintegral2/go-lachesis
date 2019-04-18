@@ -3,54 +3,23 @@
 
 package api
 
-import (
-	fmt "fmt"
-	proto "github.com/golang/protobuf/proto"
-	math "math"
-)
+import proto "github.com/golang/protobuf/proto"
+import fmt "fmt"
+import math "math"
 
 // Reference imports to suppress errors if they are not otherwise used.
 var _ = proto.Marshal
 var _ = fmt.Errorf
 var _ = math.Inf
 
-// This is a compile-time assertion to ensure that this generated file
-// is compatible with the proto package it is being compiled against.
-// A compilation error at this line likely means your copy of the
-// proto package needs to be updated.
-const _ = proto.ProtoPackageIsVersion2 // please upgrade the proto package
-
 type PeerIDs struct {
-	IDs                  []string `protobuf:"bytes,1,rep,name=IDs,proto3" json:"IDs,omitempty"`
-	XXX_NoUnkeyedLiteral struct{} `json:"-"`
-	XXX_unrecognized     []byte   `json:"-"`
-	XXX_sizecache        int32    `json:"-"`
+	IDs []string `protobuf:"bytes,1,rep,name=IDs" json:"IDs,omitempty"`
 }
 
-func (m *PeerIDs) Reset()         { *m = PeerIDs{} }
-func (m *PeerIDs) String() string { return proto.CompactTextString(m) }
-func (*PeerIDs) ProtoMessage()    {}
-func (*PeerIDs) Descriptor() ([]byte, []int) {
-	return fileDescriptor_c5219adf996163c1, []int{0}
-}
-
-func (m *PeerIDs) XXX_Unmarshal(b []byte) error {
-	return xxx_messageInfo_PeerIDs.Unmarshal(m, b)
-}
-func (m *PeerIDs) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
-	return xxx_messageInfo_PeerIDs.Marshal(b, m, deterministic)
-}
-func (m *PeerIDs) XXX_Merge(src proto.Message) {
-	xxx_messageInfo_PeerIDs.Merge(m, src)
-}
-func (m *PeerIDs) XXX_Size() int {
-	return xxx_messageInfo_PeerIDs.Size(m)
-}
-func (m *PeerIDs) XXX_DiscardUnknown() {
-	xxx_messageInfo_PeerIDs.DiscardUnknown(m)
-}
-
-var xxx_messageInfo_PeerIDs proto.InternalMessageInfo
+func (m *PeerIDs) Reset()                    { *m = PeerIDs{} }
+func (m *PeerIDs) String() string            { return proto.CompactTextString(m) }
+func (*PeerIDs) ProtoMessage()               {}
+func (*PeerIDs) Descriptor() ([]byte, []int) { return fileDescriptor1, []int{0} }
 
 func (m *PeerIDs) GetIDs() []string {
 	if m != nil {
@@ -63,9 +32,9 @@ func init() {
 	proto.RegisterType((*PeerIDs)(nil), "api.PeerIDs")
 }
 
-func init() { proto.RegisterFile("stored.proto", fileDescriptor_c5219adf996163c1) }
+func init() { proto.RegisterFile("stored.proto", fileDescriptor1) }
 
-var fileDescriptor_c5219adf996163c1 = []byte{
+var fileDescriptor1 = []byte{
 	// 75 bytes of a gzipped FileDescriptorProto
 	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xe2, 0xe2, 0x29, 0x2e, 0xc9, 0x2f,
 	0x4a, 0x4d, 0xd1, 0x2b, 0x28, 0xca, 0x2f, 0xc9, 0x17, 0x62, 0x4e, 0x2c, 0xc8, 0x54, 0x92, 0xe6,

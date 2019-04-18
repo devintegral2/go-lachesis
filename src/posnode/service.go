@@ -6,6 +6,7 @@ import (
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 
 	"github.com/Fantom-foundation/go-lachesis/src/hash"
@@ -29,8 +30,16 @@ func (n *Node) StartService() {
 		n.service.listen = network.TCPListener
 	}
 
+	cert := n.conf.CertPath + "cert_" + n.host + ".pem"
+	key := n.conf.CertPath + "key_" + n.host + ".pem"
+
+	creds, err := credentials.NewServerTLSFromFile(cert, key)
+	if err != nil {
+		panic(err)
+	}
+
 	bind := n.NetAddrOf(n.host)
-	n.server, _ = api.StartService(bind, n, n.log.Infof, n.service.listen)
+	n.server, _ = api.StartService(bind, n, n.log.Infof, n.service.listen, creds)
 
 	n.log.Info("service started")
 }

@@ -28,5 +28,6 @@ message PeerInfo {
     string ID = 1;
     bytes PubKey = 2;
     string Host = 3;
+    bytes Cert = 4;
 }
 
