@@ -15,7 +15,6 @@ type Node struct {
 	key       *common.PrivateKey
 	pub       *common.PublicKey
 	cert      []byte
-	certKey   []byte
 	store     *Store
 	consensus Consensus
 	host      string
