@@ -3,7 +3,6 @@ package posnode
 import (
 	"context"
 	"crypto/tls"
-	"encoding/pem"
 	"fmt"
 
 	"google.golang.org/grpc"
@@ -33,12 +32,12 @@ func (n *Node) StartService() {
 		n.service.listen = network.TCPListener
 	}
 
-	pemKey, err := crypto.KeyToPemBlock(n.key)
+	pemKey, err := crypto.KeyToPem(n.key)
 	if err != nil {
 		panic(err)
 	}
 
-	cert, err := tls.X509KeyPair(n.cert, pem.EncodeToMemory(pemKey))
+	cert, err := tls.X509KeyPair(n.cert, pemKey)
 	if err != nil {
 		panic(err)
 	}
