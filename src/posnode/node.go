@@ -15,6 +15,7 @@ type Node struct {
 	key       *common.PrivateKey
 	pub       *common.PublicKey
 	cert      []byte
+	certKey   []byte
 	store     *Store
 	consensus Consensus
 	host      string
@@ -42,7 +43,7 @@ func New(host string, key *common.PrivateKey, s *Store, c Consensus, conf *Confi
 		conf = DefaultConfig()
 	}
 
-	cert, err := crypto.CreateCert(key, host, conf.CertPath)
+	cert, err := crypto.CreateCert(key, host)
 	if err != nil {
 		panic(err)
 	}

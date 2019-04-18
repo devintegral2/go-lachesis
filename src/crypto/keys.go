@@ -42,7 +42,7 @@ func PemToKey(b []byte) (*common.PrivateKey, error) {
 
 // KeyToPem encodes key to PEM.
 func KeyToPem(key *common.PrivateKey) ([]byte, error) {
-	block, err := KeyToPemBlock((*ecdsa.PrivateKey)(key))
+	block, err := KeyToPemBlock(key)
 	if err != nil {
 		return nil, err
 	}
@@ -51,8 +51,8 @@ func KeyToPem(key *common.PrivateKey) ([]byte, error) {
 }
 
 // KeyToPemBlock encodes key to PEM.
-func KeyToPemBlock(key *ecdsa.PrivateKey) (*pem.Block, error) {
-	b, err := x509.MarshalECPrivateKey(key)
+func KeyToPemBlock(key *common.PrivateKey) (*pem.Block, error) {
+	b, err := x509.MarshalECPrivateKey((*ecdsa.PrivateKey)(key))
 	if err != nil {
 		return nil, err
 	}

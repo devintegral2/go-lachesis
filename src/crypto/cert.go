@@ -9,14 +9,13 @@ import (
 	"log"
 	"math/big"
 	"net"
-	"os"
 	"time"
 
 	"github.com/Fantom-foundation/go-lachesis/src/common"
 )
 
 // CreateCert create new cert & key for peer while initialize.
-func CreateCert(key *common.PrivateKey, host, certPath string) ([]byte, error) {
+func CreateCert(key *common.PrivateKey, host string) ([]byte, error) {
 	priv := (*ecdsa.PrivateKey)(key)
 
 	notBefore := time.Now()
@@ -58,42 +57,7 @@ func CreateCert(key *common.PrivateKey, host, certPath string) ([]byte, error) {
 		return nil, err
 	}
 
-	os.MkdirAll(certPath, os.ModePerm)
+	certBlock := &pem.Block{Type: "CERTIFICATE", Bytes: derBytes}
 
-	certOut, err := os.Create(certPath + "cert_" + host + ".pem")
-	if err != nil {
-		log.Fatalf("failed to open cert.pem for writing: %s", err)
-	}
-
-	pemBlock := &pem.Block{Type: "CERTIFICATE", Bytes: derBytes}
-
-	if err := pem.Encode(certOut, pemBlock); err != nil {
-		log.Fatalf("failed to write data to cert.pem: %s", err)
-	}
-	if err := certOut.Close(); err != nil {
-		log.Fatalf("error closing cert.pem: %s", err)
-	}
-	log.Print("wrote cert.pem\n")
-
-	keyOut, err := os.OpenFile(certPath+"key_"+host+".pem", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
-	if err != nil {
-		log.Print("failed to open key.pem for writing:", err)
-		return nil, err
-	}
-
-	keyBlock, err := KeyToPemBlock(priv)
-	if err != nil {
-		log.Print("failed to process key -> pem block:", err)
-		return nil, err
-	}
-
-	if err := pem.Encode(keyOut, keyBlock); err != nil {
-		log.Fatalf("failed to write data to key.pem: %s", err)
-	}
-	if err := keyOut.Close(); err != nil {
-		log.Fatalf("error closing key.pem: %s", err)
-	}
-	log.Print("wrote key.pem\n")
-
-	return pem.EncodeToMemory(pemBlock), nil
+	return pem.EncodeToMemory(certBlock), nil
 }

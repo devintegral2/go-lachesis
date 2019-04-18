@@ -2,6 +2,8 @@ package posnode
 
 import (
 	"context"
+	"crypto/tls"
+	"encoding/pem"
 	"fmt"
 
 	"google.golang.org/grpc"
@@ -9,6 +11,7 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/status"
 
+	"github.com/Fantom-foundation/go-lachesis/src/crypto"
 	"github.com/Fantom-foundation/go-lachesis/src/hash"
 	"github.com/Fantom-foundation/go-lachesis/src/inter/wire"
 	"github.com/Fantom-foundation/go-lachesis/src/network"
@@ -30,13 +33,17 @@ func (n *Node) StartService() {
 		n.service.listen = network.TCPListener
 	}
 
-	cert := n.conf.CertPath + "cert_" + n.host + ".pem"
-	key := n.conf.CertPath + "key_" + n.host + ".pem"
-
-	creds, err := credentials.NewServerTLSFromFile(cert, key)
+	pemKey, err := crypto.KeyToPemBlock(n.key)
 	if err != nil {
 		panic(err)
 	}
+
+	cert, err := tls.X509KeyPair(n.cert, pem.EncodeToMemory(pemKey))
+	if err != nil {
+		panic(err)
+	}
+
+	creds := credentials.NewTLS(&tls.Config{Certificates: []tls.Certificate{cert}})
 
 	bind := n.NetAddrOf(n.host)
 	n.server, _ = api.StartService(bind, n, n.log.Infof, n.service.listen, creds)
