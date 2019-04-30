@@ -52,11 +52,9 @@ func (n *Node) StopService() {
 
 // SyncEvents returns their known event heights excluding heights from request.
 func (n *Node) SyncEvents(ctx context.Context, req *api.KnownEvents) (*api.KnownEvents, error) {
-	if api.GrpcPeerID(ctx) == hash.EmptyPeer {
-		return nil, status.Error(codes.Unauthenticated, "unknown peer")
+	if err := n.checkClientData(ctx); err != nil {
+		return nil, err
 	}
-
-	n.checkClientHost(ctx)
 
 	knowns := n.knownEvents()
 
@@ -82,11 +80,9 @@ func (n *Node) SyncEvents(ctx context.Context, req *api.KnownEvents) (*api.Known
 
 // GetEvent returns requested event.
 func (n *Node) GetEvent(ctx context.Context, req *api.EventRequest) (*wire.Event, error) {
-	if api.GrpcPeerID(ctx) == hash.EmptyPeer {
-		return nil, status.Error(codes.Unauthenticated, "unknown peer")
+	if err := n.checkClientData(ctx); err != nil {
+		return nil, err
 	}
-
-	n.checkClientHost(ctx)
 
 	var eventHash hash.Event
 
@@ -111,11 +107,9 @@ func (n *Node) GetEvent(ctx context.Context, req *api.EventRequest) (*wire.Event
 
 // GetPeerInfo returns requested peer info.
 func (n *Node) GetPeerInfo(ctx context.Context, req *api.PeerRequest) (*api.PeerInfo, error) {
-	if api.GrpcPeerID(ctx) == hash.EmptyPeer {
-		return nil, status.Error(codes.Unauthenticated, "unknown peer")
+	if err := n.checkClientData(ctx); err != nil {
+		return nil, err
 	}
-
-	n.checkClientHost(ctx)
 
 	var id hash.Peer
 
@@ -142,10 +136,16 @@ func (n *Node) GetPeerInfo(ctx context.Context, req *api.PeerRequest) (*api.Peer
  * Utils:
  */
 
-func (n *Node) checkClientHost(ctx context.Context) {
+func (n *Node) checkClientData(ctx context.Context) error {
+	if api.GrpcPeerID(ctx) == hash.EmptyPeer {
+		return status.Error(codes.Unauthenticated, "unknown peer")
+	}
+
 	if from := api.GrpcPeerHost(ctx); from != "" {
 		n.CheckPeerIsKnown(hash.EmptyPeer, from, nil)
 	}
+
+	return nil
 }
 
 // PeersHeightsDiff returns all heights excluding excepts.

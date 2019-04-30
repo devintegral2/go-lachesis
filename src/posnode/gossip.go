@@ -2,6 +2,7 @@ package posnode
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -171,7 +172,9 @@ func (n *Node) compareKnownEvents(client api.NodeClient, peer *Peer) (map[hash.P
 	}
 
 	if *id != peer.ID {
-		// TODO: skip or continue gossiping with peer id ?
+		err = errors.New("Wrong peer ID")
+		n.ConnectFail(peer, err)
+		return nil, err
 	}
 
 	res := make(map[hash.Peer]uint64, len(resp.Lasts))
@@ -188,16 +191,12 @@ func (n *Node) downloadEvent(client api.NodeClient, peer *Peer, req *api.EventRe
 	ctx, cancel := context.WithTimeout(context.Background(), n.conf.ClientTimeout)
 	defer cancel()
 
-	id, ctx := api.ServerPeerID(ctx)
+	_, ctx = api.ServerPeerID(ctx)
 
 	w, err := client.GetEvent(ctx, req)
 	if err != nil {
 		n.ConnectFail(peer, err)
 		return nil, err
-	}
-
-	if *id != peer.ID {
-		// TODO: skip or continue gossiping with peer id ?
 	}
 
 	if w.Creator != req.PeerID || w.Index != req.Index {
