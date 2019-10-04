@@ -29,15 +29,15 @@ type SuperDb struct {
 	prevFlushTime time.Time
 
 	datadir string
+	memonly bool
 
-	mutex sync.Mutex
+	mutex *sync.Mutex
 }
 
-func New(datadir string) *SuperDb {
+func New(datadir string) (*SuperDb, error) {
 	dirs, err := ioutil.ReadDir(datadir)
 	if err != nil {
-		println(err.Error())
-		return nil
+		return nil, err
 	}
 
 	sdb := &SuperDb{
@@ -47,6 +47,7 @@ func New(datadir string) *SuperDb {
 
 		queuedDrops: make(map[string]struct{}),
 		datadir:     datadir,
+		mutex:       new(sync.Mutex),
 	}
 
 	for _, f := range dirs {
@@ -54,17 +55,33 @@ func New(datadir string) *SuperDb {
 		if f.IsDir() && strings.HasSuffix(dirname, "-ldb") {
 			name := strings.TrimSuffix(dirname, "-ldb")
 			path := filepath.Join(datadir, dirname)
-			sdb.registerExisting(name, path)
+			_, err := sdb.registerExisting(name, path)
+			if err != nil {
+				return nil, err
+			}
 		}
 	}
+	return sdb, nil
+}
+
+func NewMemOnly() *SuperDb {
+	sdb := &SuperDb{
+		pathes:   make(map[string]string),
+		wrappers: make(map[string]*flushable.Flushable),
+		bareDbs:  make(map[string]kvdb.KeyValueStore),
+
+		queuedDrops: make(map[string]struct{}),
+		memonly:     true,
+		mutex:       new(sync.Mutex),
+	}
+
 	return sdb
 }
 
-func (sdb *SuperDb) registerExisting(name, path string) kvdb.KeyValueStore {
+func (sdb *SuperDb) registerExisting(name, path string) (kvdb.KeyValueStore, error) {
 	db, err := openDb(path)
 	if err != nil {
-		println(err.Error())
-		return nil
+		return nil, err
 	}
 	wrapper := flushable.New(db)
 
@@ -72,7 +89,7 @@ func (sdb *SuperDb) registerExisting(name, path string) kvdb.KeyValueStore {
 	sdb.bareDbs[name] = db
 	sdb.wrappers[name] = wrapper
 	delete(sdb.queuedDrops, name)
-	return wrapper
+	return wrapper, nil
 }
 
 func (sdb *SuperDb) registerNew(name, path string) kvdb.KeyValueStore {
@@ -100,9 +117,6 @@ func (sdb *SuperDb) GetDb(name string) kvdb.KeyValueStore {
 }
 
 func (sdb *SuperDb) getDb(name string) kvdb.KeyValueStore {
-	sdb.mutex.Lock()
-	defer sdb.mutex.Unlock()
-
 	if wrapper := sdb.wrappers[name]; wrapper != nil {
 		return wrapper
 	}
@@ -118,17 +132,18 @@ func (sdb *SuperDb) GetLastDb(prefix string) kvdb.KeyValueStore {
 		if strings.HasPrefix(name, prefix) {
 			s := strings.Split(name, "-")
 			if len(s) < 2 {
-				println(name, "name without index")
 				continue
 			}
 			indexStr := s[len(s)-1]
 			index, err := strconv.ParseInt(indexStr, 10, 64)
 			if err != nil {
-				println(err.Error())
 				continue
 			}
 			options[name] = index
 		}
+	}
+	if len(options) == 0 {
+		return nil
 	}
 
 	maxIndexName := ""
@@ -170,13 +185,20 @@ func (sdb *SuperDb) Flush(id []byte) error {
 }
 
 func (sdb *SuperDb) flush(id []byte) error {
+	if sdb.memonly {
+		return nil
+	}
+
 	key := []byte("flag")
 
 	// drop old DBs
 	for name := range sdb.queuedDrops {
 		db := sdb.bareDbs[name]
 		if db != nil {
-			db.Close()
+			err := db.Close()
+			if err != nil {
+				return err
+			}
 			db.Drop()
 		}
 		sdb.erase(name)
@@ -187,9 +209,13 @@ func (sdb *SuperDb) flush(id []byte) error {
 		if db := sdb.bareDbs[name]; db == nil {
 			db, err := openDb(sdb.pathes[name])
 			if err != nil {
-				println(err.Error())
-				return nil
+				return err
 			}
+			err = db.Put(key, []byte("initial")) // first clean flag
+			if err != nil {
+				return err
+			}
+
 			sdb.bareDbs[name] = db
 			wrapper.SetUnderlyingDB(db)
 		}
@@ -208,7 +234,6 @@ func (sdb *SuperDb) flush(id []byte) error {
 
 		marker.Write([]byte("dirty"))
 		marker.Write(prev)
-		marker.Write([]byte("->"))
 		marker.Write(id)
 		err = db.Put(key, marker.Bytes())
 		if err != nil {
@@ -218,7 +243,10 @@ func (sdb *SuperDb) flush(id []byte) error {
 
 	// flush data
 	for _, wrapper := range sdb.wrappers {
-		wrapper.Flush()
+		err := wrapper.Flush()
+		if err != nil {
+			return err
+		}
 	}
 
 	// write clean flags
@@ -227,20 +255,26 @@ func (sdb *SuperDb) flush(id []byte) error {
 		if err != nil {
 			return err
 		}
-		wrapper.Flush()
+		err = wrapper.Flush()
+		if err != nil {
+			return err
+		}
 	}
 
 	sdb.prevFlushTime = time.Now()
 	return nil
 }
 
-func (sdb *SuperDb) FlushIfNeeded(id []byte) bool {
+func (sdb *SuperDb) FlushIfNeeded(id []byte) (bool, error) {
 	sdb.mutex.Lock()
 	defer sdb.mutex.Unlock()
 
 	if time.Since(sdb.prevFlushTime) > 10*time.Minute {
-		sdb.Flush(id)
-		return true
+		err := sdb.Flush(id)
+		if err != nil {
+			return false, err
+		}
+		return true, nil
 	}
 
 	totalNotFlushed := 0
@@ -249,10 +283,13 @@ func (sdb *SuperDb) FlushIfNeeded(id []byte) bool {
 	}
 
 	if totalNotFlushed > 100*1024*1024 {
-		sdb.Flush(id)
-		return true
+		err := sdb.Flush(id)
+		if err != nil {
+			return false, err
+		}
+		return true, nil
 	}
-	return false
+	return false, nil
 }
 
 // call on startup, after all dbs are registered
@@ -296,11 +333,6 @@ func openDb(path string) (
 	db kvdb.KeyValueStore,
 	err error,
 ) {
-	err = os.MkdirAll(path, 0600)
-	if err != nil {
-		return
-	}
-
 	var stopWatcher func()
 
 	onClose := func() error {
@@ -315,7 +347,7 @@ func openDb(path string) (
 
 	db, err = leveldb.New(path, 16, 0, "", onClose, onDrop)
 	if err != nil {
-		panic(fmt.Sprintf("can't create temporary database: %v", err))
+		return nil, err
 	}
 
 	// TODO: dir watcher instead of file watcher needed.
