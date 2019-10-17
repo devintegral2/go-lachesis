@@ -7,7 +7,7 @@ which represent the graph edges. DAG is the structure of consensus messages.
 Each consensus message has the meaning:
 
 Event is a signed message from a validator, which states:
-```I've observed the following past events (and their parents), which I include as parents. I originate this transactions list```.
+```I have observed and validated the following past events (and their parents), which are included as parents of this event. I originate the transactions list belonging to this event```.
 Processing of a combination of such messages
 allows to calculate the final order of transactions,
 exact on all the nodes regardless of network delays, clock drifts,
@@ -85,4 +85,4 @@ Events from the cheater validators aren’t counted. It's protection against "to
 Verified via PubKey recovering, hashing and matching with ```event.Creator```.
 
 #### Graph example
-<img src="./images/event1.png" width="600px">
+<img src="./images/roots1.png" width="600px">

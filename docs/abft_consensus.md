@@ -59,6 +59,13 @@ which either DIRECTLY vote FOR/AGAINST roots on previous frame, or
 vote FOR/AGAINST a root on a past frame
 AS MAJORITY OF observed votes from roots on previous frame.
 
+#### Roots example
+
+The letter in event's name stands for validator's address, it's upper case if event is root.
+First number stands for frame number, second number is event's sequence number.
+
+<img src="./images/roots1.png" width="600px">
+
 ## Consensus algorithm
 During connection of every root y, one iteration of the inner loop is executed.
 The procedure calculates the coloring of the graph. Each root of the graph
