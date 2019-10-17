@@ -56,7 +56,6 @@ returns Lachesis event by hash or short ID
 - ```epoch```: ```QUANTITY``` - the event epoch number.
 - ```seq```: ```QUANTITY``` - the event sequence number.
 - ```hash```: ```DATA```, 32 Bytes - full event ID.
-- ```seq```: ```QUANTITY``` - the event sequence number.
 - ```frame```: ```QUANTITY``` - event's frame number.
 - ```isRoot```: ```Boolean``` - true if event is root.
 - ```creator```: ```DATA```, 20 Bytes - the address of the event creator (validator).
