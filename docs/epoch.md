@@ -38,7 +38,9 @@ Validator's ID is an account address.
 Validators group and their stakes are fixed for the whole epoch. When epoch
 gets sealed, the new validators group is calculated, given with top-N stakes at the end of epoch.
 
-If validator becomes a cheater, he isn't pruned from the validators group in the same epoch
+If validator becomes a cheater, validators receives the economic penalty
+after the first block where fork was observed.
+But he isn't pruned from the validators group in the same epoch
 where fork was confirmed, because epoch's validator group is a constant.
 Instead, cheater's events will be ignored due to the
 rule "If a fork is observed by self-parent of validator B, then validator B cannot
