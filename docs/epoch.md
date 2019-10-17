@@ -1,9 +1,10 @@
 
 ## Epochs
-The Lachesis's events structure isn't exactly a DAG.
-In more detail, it's a chain of DAGs, where each DAG is called ```epoch```.
+The Lachesis's events structure isn't a monolith DAG.
+In more detail, it's a DAG which is separated into sub-DAGs,
+where each sub-DAG is called ```epoch```.
 
-The epoch is DAG, which consists of no more than ```EPOCH_LEN``` ```decided frames```.
+The epoch is a DAG, which consists of no more than ```EPOCH_LEN``` ```decided frames```.
 In other words, contains no more than ```EPOCH_LEN``` blocks.
 
 When epoch has decided its ```EPOCH_LEN```'th block, it gets sealed. The inner epoch indexes
