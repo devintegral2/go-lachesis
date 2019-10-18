@@ -1,7 +1,6 @@
 package inter
 
 import (
-	"bytes"
 	"io"
 	"math"
 
@@ -114,9 +113,9 @@ func (e *EventHeaderData) MarshalBinary() ([]byte, error) {
 	return raw[:minBytes], nil
 }
 
-func writeUint32Compact(w *bytes.Buffer, v uint32) (bytes int) {
+func writeUint32Compact(buf *fast.Buffer, v uint32) (bytes int) {
 	for v > 0 {
-		err := w.WriteByte(byte(v))
+		err := buf.WriteByte(byte(v))
 		if err != nil {
 			panic(err)
 		}
@@ -126,9 +125,9 @@ func writeUint32Compact(w *bytes.Buffer, v uint32) (bytes int) {
 	return
 }
 
-func writeUint64Compact(w *bytes.Buffer, v uint64) (bytes int) {
+func writeUint64Compact(buf *fast.Buffer, v uint64) (bytes int) {
 	for v > 0 {
-		err := w.WriteByte(byte(v))
+		err := buf.WriteByte(byte(v))
 		if err != nil {
 			panic(err)
 		}
@@ -138,28 +137,80 @@ func writeUint64Compact(w *bytes.Buffer, v uint64) (bytes int) {
 	return
 }
 
-func (e *EventHeaderData) UnmarshalBinary(src []byte) error {
-	// Simple types values
-	buf := fast_buffer.NewBuffer(&src)
+func (e *EventHeaderData) UnmarshalBinary(raw []byte) error {
+	var parentCount uint32
 
-	e.decodePackedToUint32Fields(buf)
-	e.decodePackedToUint64Fields(buf)
+	fields32 := []*uint32{
+		&e.Version,
+		(*uint32)(&e.Epoch),
+		(*uint32)(&e.Seq),
+		(*uint32)(&e.Frame),
+		(*uint32)(&e.Lamport),
+		&parentCount,
+	}
+	fields64 := []*uint64{
+		&e.GasPowerLeft,
+		&e.GasPowerUsed,
+		(*uint64)(&e.ClaimedTime),
+		(*uint64)(&e.MedianTime),
+	}
+	fieldsBool := []*bool{
+		&e.IsRoot,
+	}
 
-	// Fixed types []byte values
-	e.Creator.SetBytes(buf.Read(common.AddressLength))
-	e.PrevEpochHash.SetBytes(buf.Read(common.HashLength))
-	e.TxHash.SetBytes(buf.Read(common.HashLength))
+	buf := fast.NewBuffer(raw)
 
-	// Boolean
-	e.IsRoot = readByteBool(buf)
+	fcount := uint(len(fields32) + len(fields64) + len(fieldsBool))
+	bits := uint(4) // int64/8 = 8 (bytes count), could be stored in 4 bits
+	header := utils.NewBitArray(bits, fcount)
+	headerBytes := buf.Read(1)[0]
+	n := 0
+	nn := header.Parse(buf.Read(headerBytes))
 
-	// Sliced values
-	e.decodeParentsWithoutEpoch(buf)
+	for _, f := range fields32 {
+		n, nn = nn[0], nn[1:]
+		*f = readUint32Compact(buf, n)
+	}
+	for _, f := range fields64 {
+		n, nn = nn[0], nn[1:]
+		*f = readUint64Compact(buf, n)
+	}
+	for _, f := range fieldsBool {
+		n, nn := nn[0], nn[1:]
+		*f = (n != 0)
+	}
 
-	extraCount := readUint32(buf)
-	e.Extra = buf.Read(int(extraCount))
+	for i := uint32(0); i < parentCount; i++ {
+		tail := buf.Read(common.HashLength - 4) // without epoch
+		bb := append(e.Epoch.Bytes(), tail...)
+		p := hash.BytesToEvent(bb)
+		e.Parents.Add(p)
+	}
+
+	e.Creator = common.BytesToAddress(buf.Read(common.AddressLength))
+	e.PrevEpochHash = common.BytesToHash(buf.Read(common.HashLength))
+	e.TxHash = common.BytesToHash(buf.Read(common.HashLength))
+	e.Extra = buf.Read(-1)
 
 	return nil
+}
+
+func readUint32Compact(buf *fast.Buffer, bytes int) uint32 {
+	var v uint32
+	for _, b := range buf.Read(bytes) {
+		v = (v << 8) + uint32(b)
+	}
+
+	return v
+}
+
+func readUint64Compact(buf *fast.Buffer, bytes int) uint64 {
+	var v uint64
+	for _, b := range buf.Read(bytes) {
+		v = (v << 8) + uint64(b)
+	}
+
+	return v
 }
 
 func (e *EventHeaderData) encodeUint32FieldsToPacked(buf *fast_buffer.Buffer) {
