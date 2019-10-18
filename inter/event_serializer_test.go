@@ -4,7 +4,6 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/stretchr/testify/assert"
 
@@ -13,141 +12,90 @@ import (
 	"github.com/Fantom-foundation/go-lachesis/inter/idx"
 )
 
-func TestEventHeaderData_MarshalBinary(t *testing.T) {
-	events := FakeEventWithOneEpoch()
-	header := events[len(events)-1].EventHeaderData
-
-	buf, _ := header.MarshalBinary()
-	newHeader := EventHeaderData{}
-	_ = newHeader.UnmarshalBinary(buf)
-
-	assert.EqualValues(t, header, newHeader)
-}
-
 func TestEventHeaderData_EncodeRLP(t *testing.T) {
-	events := FakeEventWithOneEpoch()
-	header := events[len(events)-1].EventHeaderData
+	assertar := assert.New(t)
 
-	buf, err := rlp.EncodeToBytes(&header)
-
-	assert.Equal(t, nil, err)
-
-	newHeader := EventHeaderData{}
-	_ = rlp.DecodeBytes(buf, &newHeader)
-
-	assert.EqualValues(t, header, newHeader)
-}
-
-func BenchmarkEventHeaderData_MarshalBinary(b *testing.B) {
-	events := FakeEventWithOneEpoch()
-	header := events[len(events)-1].EventHeaderData
-
-	/*
-	// Only for go1.13+
-	buf, _ := header.MarshalBinary()
-	b.ReportMetric(float64(len(buf)), "Bytes")
-	*/
-
-	for i := 0; i < b.N; i++ {
-		_, _ = header.MarshalBinary()
+	header0 := FakeEvent().EventHeaderData
+	buf, err := rlp.EncodeToBytes(&header0)
+	if !assertar.NoError(err) {
+		return
 	}
+
+	var header1 EventHeaderData
+	err = rlp.DecodeBytes(buf, &header1)
+	if !assertar.NoError(err) {
+		return
+	}
+
+	assert.EqualValues(t, header0, header1)
 }
 
 func BenchmarkEventHeaderData_EncodeRLP(b *testing.B) {
-	events := FakeEventWithOneEpoch()
-	header := events[len(events)-1].EventHeaderData
+	header := FakeEvent().EventHeaderData
 
-	/*
-	// Only for go1.13+
-	buf, err := rlp.EncodeToBytes(header)
-	if err != nil {
-		b.Fatalf("Error rlp serialization: %s", err)
-	}
-	b.ReportMetric(float64(len(buf)), "Bytes")
-	*/
+	// TODO: for go1.13+
+	// b.ReportMetric(float64(len(buf)), "Bytes")
 
 	for i := 0; i < b.N; i++ {
-		_, _ = rlp.EncodeToBytes(header)
-	}
-}
-
-func BenchmarkEventHeaderData_UnmarshalBinary(b *testing.B) {
-	events := FakeEventWithOneEpoch()
-	header := events[len(events)-1].EventHeaderData
-
-	buf, _ := header.MarshalBinary()
-
-	for i := 0; i < b.N; i++ {
-		_ = header.UnmarshalBinary(buf)
+		_, err := rlp.EncodeToBytes(&header)
+		if err != nil {
+			b.Fatal(err)
+		}
 	}
 }
 
 func BenchmarkEventHeaderData_DecodeRLP(b *testing.B) {
-	events := FakeEventWithOneEpoch()
-	header := events[len(events)-1].EventHeaderData
+	header := FakeEvent().EventHeaderData
 
 	buf, err := rlp.EncodeToBytes(&header)
 	if err != nil {
-		b.Fatalf("Error rlp serialization: %s", err)
+		b.Fatal(err)
 	}
+
+	b.ResetTimer()
 
 	for i := 0; i < b.N; i++ {
 		err = rlp.DecodeBytes(buf, &header)
 		if err != nil {
-			b.Fatalf("Error rlp deserialization: %s", err)
+			b.Fatal(err)
 		}
 	}
 }
 
-func FakeEventWithOneEpoch() (res []*Event) {
-	creators := []common.Address{
-		{},
-		hash.FakePeer(),
-		hash.FakePeer(),
-		hash.FakePeer(),
-	}
-	parents := []hash.Events{
-		FakeEventsEpoch(1),
-		FakeEventsEpoch(2),
-		FakeEventsEpoch(8),
-	}
-	i := 0
-	for c := 0; c < len(creators); c++ {
-		for p := 0; p < len(parents); p++ {
-			e := NewEvent()
-			e.Epoch = FakeEpoch()
-			e.Seq = idx.Event(p)
-			e.Creator = creators[c]
-			e.Parents = parents[p]
-			e.Extra = []byte{}
-			e.Sig = []byte{}
+func FakeEvent() *Event {
+	var epoch idx.Epoch = 52123
 
-			res = append(res, e)
-			i++
-		}
+	e := NewEvent()
+	e.Epoch = epoch
+	e.Seq = idx.Event(9)
+	e.Creator = hash.FakePeer()
+	e.Parents = FakeEventHashes(epoch, 8)
+	e.Extra = make([]byte, 10, 10)
+	e.Sig = []byte{}
+
+	_, err := rand.Read(e.Extra)
+	if err != nil {
+		panic(err)
 	}
-	return
+
+	return e
 }
 
-func FakeEpoch() idx.Epoch {
-	return 123456
+// FakeEventHashes generates random event hashes for testing purpose.
+func FakeEventHashes(epoch idx.Epoch, n int) hash.Events {
+	res := hash.Events{}
+	for i := 0; i < n; i++ {
+		res.Add(FakeEventHash(epoch))
+	}
+	return res
 }
 
-// FakeEvent generates random fake event hash with one epoch for testing purpose.
-func FakeEventEpoch() (h hash.Event) {
+// FakeEventHash generates random event hash for testing purpose.
+func FakeEventHash(epoch idx.Epoch) (h hash.Event) {
 	_, err := rand.Read(h[:])
 	if err != nil {
 		panic(err)
 	}
-	copy(h[0:4], bigendian.Int32ToBytes(uint32(FakeEpoch())))
+	copy(h[0:4], bigendian.Int32ToBytes(uint32(epoch)))
 	return
-}
-
-// FakeEvents generates random fake event hashes with one epoch for testing purpose.
-func FakeEventsEpoch(n int) hash.Events {
-	res := hash.Events{}
-	for i := 0; i < n; i++ {
-		res.Add(FakeEventEpoch())
-	}
-	return res
 }

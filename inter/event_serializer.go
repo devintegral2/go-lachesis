@@ -71,9 +71,11 @@ func (e *EventHeaderData) MarshalBinary() ([]byte, error) {
 		common.HashLength + // TxHash
 		len(e.Extra)
 	raw := make([]byte, maxBytes, maxBytes)
+	rawHeader := raw[:headerBytes]
+	rawBody := raw[headerBytes:]
 
-	raw[0] = byte(header.Size())
-	buf := fast.NewBuffer(raw[headerBytes:])
+	rawHeader[0] = byte(header.Size())
+	buf := fast.NewBuffer(&rawBody)
 	for _, f := range fields32 {
 		n := writeUint32Compact(buf, f)
 		header.Push(n)
@@ -89,7 +91,7 @@ func (e *EventHeaderData) MarshalBinary() ([]byte, error) {
 			header.Push(0)
 		}
 	}
-	copy(raw[1:], header.Bytes())
+	copy(rawHeader[1:], header.Bytes())
 
 	for _, p := range e.Parents {
 		buf.Write(p.Bytes()[4:]) // without epoch
@@ -144,7 +146,7 @@ func (e *EventHeaderData) UnmarshalBinary(raw []byte) error {
 		&e.IsRoot,
 	}
 
-	buf := fast.NewBuffer(raw)
+	buf := fast.NewBuffer(&raw)
 
 	fcount := uint(len(fields32) + len(fields64) + len(fieldsBool))
 	bits := uint(4) // int64/8 = 8 (bytes count), could be stored in 4 bits
@@ -166,6 +168,7 @@ func (e *EventHeaderData) UnmarshalBinary(raw []byte) error {
 		*f = (n != 0)
 	}
 
+	e.Parents = hash.Events{}
 	for i := uint32(0); i < parentCount; i++ {
 		tail := buf.Read(common.HashLength - 4) // without epoch
 		bb := append(e.Epoch.Bytes(), tail...)
@@ -176,7 +179,7 @@ func (e *EventHeaderData) UnmarshalBinary(raw []byte) error {
 	e.Creator = common.BytesToAddress(buf.Read(common.AddressLength))
 	e.PrevEpochHash = common.BytesToHash(buf.Read(common.HashLength))
 	e.TxHash = common.BytesToHash(buf.Read(common.HashLength))
-	e.Extra = buf.Read(-1)
+	e.Extra = buf.Read(len(raw) - buf.Position())
 
 	return nil
 }

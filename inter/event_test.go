@@ -4,16 +4,18 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/Fantom-foundation/go-lachesis/hash"
+	"github.com/Fantom-foundation/go-lachesis/inter/idx"
 )
 
 func TestEventSerialization(t *testing.T) {
 	assertar := assert.New(t)
 
-	events := FakeEventWithOneEpoch()
+	events := FakeEvents()
 	for i, e0 := range events {
 		dsc := fmt.Sprintf("iter#%d", i)
 
@@ -68,4 +70,36 @@ func TestEventHash(t *testing.T) {
 			}
 		}
 	})
+}
+
+func FakeEvents() (res []*Event) {
+	var epoch idx.Epoch = 34245
+	creators := []common.Address{
+		{},
+		hash.FakePeer(),
+		hash.FakePeer(),
+		hash.FakePeer(),
+	}
+	parents := []hash.Events{
+		{},
+		FakeEventHashes(epoch, 1),
+		FakeEventHashes(epoch, 2),
+		FakeEventHashes(epoch, 8),
+	}
+	i := 0
+	for c := 0; c < len(creators); c++ {
+		for p := 0; p < len(parents); p++ {
+			e := NewEvent()
+			e.Epoch = epoch
+			e.Seq = idx.Event(p)
+			e.Creator = creators[c]
+			e.Parents = parents[p]
+			e.Extra = []byte{}
+			e.Sig = []byte{}
+
+			res = append(res, e)
+			i++
+		}
+	}
+	return
 }
