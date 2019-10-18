@@ -1,6 +1,7 @@
 package inter
 
 import (
+	"bytes"
 	"io"
 	"math"
 
@@ -11,12 +12,13 @@ import (
 	"github.com/Fantom-foundation/go-lachesis/common/littleendian"
 	"github.com/Fantom-foundation/go-lachesis/hash"
 	"github.com/Fantom-foundation/go-lachesis/inter/idx"
+	"github.com/Fantom-foundation/go-lachesis/utils"
 	"github.com/Fantom-foundation/go-lachesis/utils/fast_buffer"
 )
 
 const (
 	EventHeaderFixedDataSize = 53
-	SerializedCounterSize = 4
+	SerializedCounterSize    = 4
 )
 
 func (e *EventHeaderData) EncodeRLP(w io.Writer) error {
@@ -41,51 +43,99 @@ func (e *EventHeaderData) DecodeRLP(src *rlp.Stream) error {
 	return err
 }
 
-
 func (e *EventHeaderData) MarshalBinary() ([]byte, error) {
-	// Calculate size of constant sized fields
-	length := EventHeaderFixedDataSize + common.AddressLength + 2*common.HashLength
-
-	// Calculate sizes of slice fields
-	parentsCount := 0
-	if e.Parents != nil {
-		parentsCount = len(e.Parents)
+	fields32 := []uint32{
+		e.Version,
+		uint32(e.Epoch),
+		uint32(e.Seq),
+		uint32(e.Frame),
+		uint32(e.Lamport),
+		uint32(len(e.Parents)),
+	}
+	fields64 := []uint64{
+		e.GasPowerLeft,
+		e.GasPowerUsed,
+		uint64(e.ClaimedTime),
+		uint64(e.MedianTime),
+	}
+	fieldsBool := []bool{
+		e.IsRoot,
 	}
 
-	extraCount := 0
-	if e.Extra != nil {
-		extraCount = len(e.Extra)
+	fcount := uint(len(fields32) + len(fields64) + len(fieldsBool))
+	bits := uint(4) // int64/8 = 8 (bytes count), could be stored in 4 bits
+	header := utils.NewBitArray(bits, fcount)
+
+	headerBytes := 1 + // header length
+		header.Size()
+
+	minBytes := 0
+	maxBytes := headerBytes +
+		len(fields32)*4 +
+		len(fields64)*8 +
+		len(e.Parents)*(32-4) + // without idx.Epoch
+		common.AddressLength + // Creator
+		common.HashLength + // PrevEpochHash
+		common.HashLength + // TxHash
+		len(e.Extra)
+	raw := make([]byte, maxBytes, maxBytes)
+
+	raw[0] = byte(header.Size())
+	buf := fast.NewBuffer(raw[headerBytes:])
+	for _, f := range fields32 {
+		n := writeUint32Compact(buf, f)
+		minBytes += n
+		header.Push(n)
+	}
+	for _, f := range fields64 {
+		n := writeUint64Compact(buf, f)
+		minBytes += n
+		header.Push(n)
+	}
+	for _, f := range fieldsBool {
+		if f {
+			header.Push(1)
+		} else {
+			header.Push(0)
+		}
+	}
+	copy(raw[1:], header.Bytes())
+	minBytes += headerBytes
+
+	for _, p := range e.Parents {
+		minBytes += buf.Write(p.Bytes()[4:]) // without epoch
 	}
 
-	// Full length with data about sizes of slices
-	length += SerializedCounterSize + parentsCount*common.HashLength + SerializedCounterSize + extraCount
+	minBytes += buf.Write(e.Creator.Bytes())
+	minBytes += buf.Write(e.PrevEpochHash.Bytes())
+	minBytes += buf.Write(e.TxHash.Bytes())
+	minBytes += buf.Write(e.Extra)
 
-	bytesBuf := make([]byte, length, length)
-	buf := fast_buffer.NewBuffer(&bytesBuf)
+	return raw[:minBytes], nil
+}
 
-	// Simple types values
-	e.encodeUint32FieldsToPacked(buf)
-	e.encodeUint64FieldsToPacked(buf)
-
-	// Fixed types []byte values
-	buf.Write(e.Creator.Bytes())
-	buf.Write(e.PrevEpochHash.Bytes())
-	buf.Write(e.TxHash.Bytes())
-
-	// boolean
-	b := byte(0)
-	if e.IsRoot {
-		b = 1
+func writeUint32Compact(w *bytes.Buffer, v uint32) (bytes int) {
+	for v > 0 {
+		err := w.WriteByte(byte(v))
+		if err != nil {
+			panic(err)
+		}
+		bytes++
+		v = v >> 8
 	}
-	buf.Write([]byte{b})
+	return
+}
 
-	// Parents
-	e.encodeParentsWithoutEpoch(buf)
-
-	buf.Write(littleendian.Int32ToBytes(uint32(extraCount))[0:SerializedCounterSize])
-	buf.Write(e.Extra)
-
-	return buf.Bytes(), nil
+func writeUint64Compact(w *bytes.Buffer, v uint64) (bytes int) {
+	for v > 0 {
+		err := w.WriteByte(byte(v))
+		if err != nil {
+			panic(err)
+		}
+		bytes++
+		v = v >> 8
+	}
+	return
 }
 
 func (e *EventHeaderData) UnmarshalBinary(src []byte) error {
@@ -212,7 +262,7 @@ func maxBytesForUint64(t uint64) uint {
 	mask := uint64(math.MaxUint64)
 	for i := uint(1); i < 8; i++ {
 		mask = mask << 8
-		if mask & t == 0 {
+		if mask&t == 0 {
 			return i
 		}
 	}
