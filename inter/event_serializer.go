@@ -2,17 +2,17 @@ package inter
 
 import (
 	"io"
-	"math"
+	//	"math"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rlp"
 
-	"github.com/Fantom-foundation/go-lachesis/common/bigendian"
-	"github.com/Fantom-foundation/go-lachesis/common/littleendian"
+	//	"github.com/Fantom-foundation/go-lachesis/common/bigendian"
+	//	"github.com/Fantom-foundation/go-lachesis/common/littleendian"
 	"github.com/Fantom-foundation/go-lachesis/hash"
-	"github.com/Fantom-foundation/go-lachesis/inter/idx"
+	//	"github.com/Fantom-foundation/go-lachesis/inter/idx"
 	"github.com/Fantom-foundation/go-lachesis/utils"
-	"github.com/Fantom-foundation/go-lachesis/utils/fast_buffer"
+	"github.com/Fantom-foundation/go-lachesis/utils/fast"
 )
 
 const (
@@ -68,7 +68,6 @@ func (e *EventHeaderData) MarshalBinary() ([]byte, error) {
 	headerBytes := 1 + // header length
 		header.Size()
 
-	minBytes := 0
 	maxBytes := headerBytes +
 		len(fields32)*4 +
 		len(fields64)*8 +
@@ -83,12 +82,10 @@ func (e *EventHeaderData) MarshalBinary() ([]byte, error) {
 	buf := fast.NewBuffer(raw[headerBytes:])
 	for _, f := range fields32 {
 		n := writeUint32Compact(buf, f)
-		minBytes += n
 		header.Push(n)
 	}
 	for _, f := range fields64 {
 		n := writeUint64Compact(buf, f)
-		minBytes += n
 		header.Push(n)
 	}
 	for _, f := range fieldsBool {
@@ -99,26 +96,23 @@ func (e *EventHeaderData) MarshalBinary() ([]byte, error) {
 		}
 	}
 	copy(raw[1:], header.Bytes())
-	minBytes += headerBytes
 
 	for _, p := range e.Parents {
-		minBytes += buf.Write(p.Bytes()[4:]) // without epoch
+		buf.Write(p.Bytes()[4:]) // without epoch
 	}
 
-	minBytes += buf.Write(e.Creator.Bytes())
-	minBytes += buf.Write(e.PrevEpochHash.Bytes())
-	minBytes += buf.Write(e.TxHash.Bytes())
-	minBytes += buf.Write(e.Extra)
+	buf.Write(e.Creator.Bytes())
+	buf.Write(e.PrevEpochHash.Bytes())
+	buf.Write(e.TxHash.Bytes())
+	buf.Write(e.Extra)
 
-	return raw[:minBytes], nil
+	length := headerBytes + buf.Position()
+	return raw[:length], nil
 }
 
 func writeUint32Compact(buf *fast.Buffer, v uint32) (bytes int) {
 	for v > 0 {
-		err := buf.WriteByte(byte(v))
-		if err != nil {
-			panic(err)
-		}
+		buf.WriteByte(byte(v))
 		bytes++
 		v = v >> 8
 	}
@@ -127,10 +121,7 @@ func writeUint32Compact(buf *fast.Buffer, v uint32) (bytes int) {
 
 func writeUint64Compact(buf *fast.Buffer, v uint64) (bytes int) {
 	for v > 0 {
-		err := buf.WriteByte(byte(v))
-		if err != nil {
-			panic(err)
-		}
+		buf.WriteByte(byte(v))
 		bytes++
 		v = v >> 8
 	}
@@ -163,7 +154,7 @@ func (e *EventHeaderData) UnmarshalBinary(raw []byte) error {
 	fcount := uint(len(fields32) + len(fields64) + len(fieldsBool))
 	bits := uint(4) // int64/8 = 8 (bytes count), could be stored in 4 bits
 	header := utils.NewBitArray(bits, fcount)
-	headerBytes := buf.Read(1)[0]
+	headerBytes := int(buf.Read(1)[0])
 	n := 0
 	nn := header.Parse(buf.Read(headerBytes))
 
@@ -176,7 +167,7 @@ func (e *EventHeaderData) UnmarshalBinary(raw []byte) error {
 		*f = readUint64Compact(buf, n)
 	}
 	for _, f := range fieldsBool {
-		n, nn := nn[0], nn[1:]
+		n, nn = nn[0], nn[1:]
 		*f = (n != 0)
 	}
 
@@ -197,8 +188,8 @@ func (e *EventHeaderData) UnmarshalBinary(raw []byte) error {
 
 func readUint32Compact(buf *fast.Buffer, bytes int) uint32 {
 	var v uint32
-	for _, b := range buf.Read(bytes) {
-		v = (v << 8) + uint32(b)
+	for i, b := range buf.Read(bytes) {
+		v += uint32(b) << uint(8*i)
 	}
 
 	return v
@@ -206,13 +197,14 @@ func readUint32Compact(buf *fast.Buffer, bytes int) uint32 {
 
 func readUint64Compact(buf *fast.Buffer, bytes int) uint64 {
 	var v uint64
-	for _, b := range buf.Read(bytes) {
-		v = (v << 8) + uint64(b)
+	for i, b := range buf.Read(bytes) {
+		v += uint64(b) << uint(8*i)
 	}
 
 	return v
 }
 
+/*
 func (e *EventHeaderData) encodeUint32FieldsToPacked(buf *fast_buffer.Buffer) {
 	// Detect max value from 4 fields
 	v1size := maxBytesForUint32(e.Version)
@@ -357,3 +349,4 @@ func readByteBool(buf *fast_buffer.Buffer) bool {
 func readUint32(buf *fast_buffer.Buffer) (data uint32) {
 	return littleendian.BytesToInt32(buf.Read(4))
 }
+*/
