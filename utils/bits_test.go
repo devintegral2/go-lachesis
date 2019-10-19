@@ -15,14 +15,20 @@ func TestBitArray(t *testing.T) {
 
 func testBitArray(t *testing.T, bits uint) {
 	expect := rand.Perm(1 << bits)
+	count := len(expect)
 
-	arr := NewBitArray(bits, uint(len(expect)))
+	arr := NewBitArray(bits, uint(count))
 	for _, v := range expect {
 		arr.Push(v)
 	}
 
 	raw := arr.Bytes()
-	got := arr.Parse(raw)
+	t.Logf("raw: %v", raw)
+	arr.Parse(raw)
+	got := make([]int, count, count)
+	for i := 0; i < count; i++ {
+		got[i] = arr.Pop()
+	}
 
 	assert.EqualValuesf(t, expect, got, "bits count: %d", bits)
 

@@ -152,33 +152,30 @@ func (e *EventHeaderData) UnmarshalBinary(raw []byte) error {
 	bits := uint(4) // int64/8 = 8 (bytes count), could be stored in 4 bits
 	header := utils.NewBitArray(bits, fcount)
 	headerBytes := int(buf.Read(1)[0])
-	n := 0
-	nn := header.Parse(buf.Read(headerBytes))
+	header.Parse(buf.Read(headerBytes))
 
 	for _, f := range fields32 {
-		n, nn = nn[0], nn[1:]
+		n := header.Pop()
 		*f = readUint32Compact(buf, n)
 	}
 	for _, f := range fields64 {
-		n, nn = nn[0], nn[1:]
+		n := header.Pop()
 		*f = readUint64Compact(buf, n)
 	}
 	for _, f := range fieldsBool {
-		n, nn = nn[0], nn[1:]
+		n := header.Pop()
 		*f = (n != 0)
 	}
 
-	e.Parents = hash.Events{}
+	e.Parents = make(hash.Events, parentCount, parentCount)
 	for i := uint32(0); i < parentCount; i++ {
-		tail := buf.Read(common.HashLength - 4) // without epoch
-		bb := append(e.Epoch.Bytes(), tail...)
-		p := hash.BytesToEvent(bb)
-		e.Parents.Add(p)
+		copy(e.Parents[i][:4], e.Epoch.Bytes())
+		copy(e.Parents[i][4:], buf.Read(common.HashLength-4)) // without epoch
 	}
 
-	e.Creator = common.BytesToAddress(buf.Read(common.AddressLength))
-	e.PrevEpochHash = common.BytesToHash(buf.Read(common.HashLength))
-	e.TxHash = common.BytesToHash(buf.Read(common.HashLength))
+	e.Creator.SetBytes(buf.Read(common.AddressLength))
+	e.PrevEpochHash.SetBytes(buf.Read(common.HashLength))
+	e.TxHash.SetBytes(buf.Read(common.HashLength))
 	e.Extra = buf.Read(len(raw) - buf.Position())
 
 	return nil
