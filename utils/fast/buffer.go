@@ -7,9 +7,9 @@ type Buffer struct {
 }
 
 // NewBuffer wraps bytes with buffer.
-func NewBuffer(bb *[]byte) *Buffer {
+func NewBuffer(bb []byte) *Buffer {
 	return &Buffer{
-		buf:    bb,
+		buf:    &bb,
 		offset: 0,
 	}
 }

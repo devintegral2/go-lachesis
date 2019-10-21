@@ -59,10 +59,7 @@ func (e *EventHeaderData) MarshalBinary() ([]byte, error) {
 	bits := uint(4) // int64/8 = 8 (bytes count), could be stored in 4 bits
 	header := utils.NewBitArray(bits, fcount)
 
-	headerBytes := 1 + // header length
-		header.Size()
-
-	maxBytes := headerBytes +
+	maxBytes := header.Size() +
 		len(fields32)*4 +
 		len(fields64)*8 +
 		len(e.Parents)*(32-4) + // without idx.Epoch
@@ -70,28 +67,27 @@ func (e *EventHeaderData) MarshalBinary() ([]byte, error) {
 		common.HashLength + // PrevEpochHash
 		common.HashLength + // TxHash
 		len(e.Extra)
-	raw := make([]byte, maxBytes, maxBytes)
-	rawHeader := raw[:headerBytes]
-	rawBody := raw[headerBytes:]
 
-	rawHeader[0] = byte(header.Size())
-	buf := fast.NewBuffer(&rawBody)
+	raw := make([]byte, maxBytes, maxBytes)
+
+	headerW := header.Writer(raw[0:header.Size()])
+	buf := fast.NewBuffer(raw[header.Size():])
+
 	for _, f := range fields32 {
 		n := writeUint32Compact(buf, f)
-		header.Push(n)
+		headerW.Push(n)
 	}
 	for _, f := range fields64 {
 		n := writeUint64Compact(buf, f)
-		header.Push(n)
+		headerW.Push(n)
 	}
 	for _, f := range fieldsBool {
 		if f {
-			header.Push(1)
+			headerW.Push(1)
 		} else {
-			header.Push(0)
+			headerW.Push(0)
 		}
 	}
-	copy(rawHeader[1:], header.Bytes())
 
 	for _, p := range e.Parents {
 		buf.Write(p.Bytes()[4:]) // without epoch
@@ -102,7 +98,7 @@ func (e *EventHeaderData) MarshalBinary() ([]byte, error) {
 	buf.Write(e.TxHash.Bytes())
 	buf.Write(e.Extra)
 
-	length := headerBytes + buf.Position()
+	length := header.Size() + buf.Position()
 	return raw[:length], nil
 }
 
@@ -146,24 +142,23 @@ func (e *EventHeaderData) UnmarshalBinary(raw []byte) error {
 		&e.IsRoot,
 	}
 
-	buf := fast.NewBuffer(&raw)
-
 	fcount := uint(len(fields32) + len(fields64) + len(fieldsBool))
 	bits := uint(4) // int64/8 = 8 (bytes count), could be stored in 4 bits
 	header := utils.NewBitArray(bits, fcount)
-	headerBytes := int(buf.Read(1)[0])
-	header.Parse(buf.Read(headerBytes))
+
+	headerR := header.Reader(raw[:header.Size()])
+	buf := fast.NewBuffer(raw[header.Size():])
 
 	for _, f := range fields32 {
-		n := header.Pop()
+		n := headerR.Pop()
 		*f = readUint32Compact(buf, n)
 	}
 	for _, f := range fields64 {
-		n := header.Pop()
+		n := headerR.Pop()
 		*f = readUint64Compact(buf, n)
 	}
 	for _, f := range fieldsBool {
-		n := header.Pop()
+		n := headerR.Pop()
 		*f = (n != 0)
 	}
 
@@ -176,7 +171,7 @@ func (e *EventHeaderData) UnmarshalBinary(raw []byte) error {
 	e.Creator.SetBytes(buf.Read(common.AddressLength))
 	e.PrevEpochHash.SetBytes(buf.Read(common.HashLength))
 	e.TxHash.SetBytes(buf.Read(common.HashLength))
-	e.Extra = buf.Read(len(raw) - buf.Position())
+	e.Extra = buf.Read(len(raw) - header.Size() - buf.Position())
 
 	return nil
 }

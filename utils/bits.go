@@ -1,13 +1,38 @@
 package utils
 
-// BitArray stores only bits of count number of int.
-type BitArray struct {
-	bits   uint
-	count  uint
-	vals   []int
-	offset uint
-	size   int
-}
+type (
+	// BitArray stores only first <bits> of each of <count> numbers.
+	BitArray struct {
+		bits  uint
+		count uint
+		vals  []int
+
+		size int
+	}
+
+	// BitArrayWriter of numbers to BitArray.
+	BitArrayWriter struct {
+		BitArray
+		offset uint
+		raw    []byte
+
+		i   uint
+		buf uint16
+		n   uint
+	}
+
+	// BitArrayReader of numbers from BitArray.
+	BitArrayReader struct {
+		BitArray
+		offset uint
+		raw    []byte
+
+		mask uint16
+		i    uint
+		buf  uint16
+		n    uint
+	}
+)
 
 // NewBitArray makes bits array of int.
 func NewBitArray(bits, count uint) *BitArray {
@@ -20,6 +45,31 @@ func NewBitArray(bits, count uint) *BitArray {
 		count: count,
 		vals:  make([]int, count, count),
 		size:  calcSize(bits, count),
+	}
+}
+
+// Writer is a number packer.
+func (a *BitArray) Writer(w []byte) *BitArrayWriter {
+	if len(w) != a.size {
+		panic("need .Size() bytes for writing")
+	}
+
+	return &BitArrayWriter{
+		BitArray: *a,
+		raw:      w,
+	}
+}
+
+// Reader is a number unpacker.
+func (a *BitArray) Reader(r []byte) *BitArrayReader {
+	if len(r) != a.size {
+		panic("need .Size() bytes for reading")
+	}
+
+	return &BitArrayReader{
+		BitArray: *a,
+		raw:      r,
+		mask:     uint16(1<<a.bits) - 1,
 	}
 }
 
@@ -37,77 +87,47 @@ func (a *BitArray) Size() int {
 	return a.size
 }
 
-// Push bits of int into array.
-func (a *BitArray) Push(v int) {
+// Push bits of number into array.
+func (a *BitArrayWriter) Push(v int) {
 	if v < 0 {
-		panic("positives only")
+		panic("only positives accepts")
 	}
 	if v >= (1 << a.bits) {
-		panic("too big value")
+		panic("too big number")
 	}
 
-	a.vals[a.offset] = v
-	a.offset++
+	if a.i >= a.count {
+		panic("array is full")
+	}
+
+	a.buf += uint16(v << a.n)
+	a.n += a.bits
+	a.raw[a.offset] = byte(a.buf)
+	for a.n >= 8 {
+		a.offset++
+		a.buf = a.buf >> 8
+		a.n -= 8
+	}
+
+	a.i++
 }
 
-// Pop int from array.
-func (a *BitArray) Pop() int {
-	v := a.vals[a.offset]
-	a.offset++
-	return v
-}
-
-// Bytes from all bits.
-func (a *BitArray) Bytes() []byte {
-	if a.offset < a.count {
-		panic("array is not full yet")
+// Pop number from array.
+func (a *BitArrayReader) Pop() int {
+	if a.i >= a.count {
+		panic("no numbers more")
 	}
 
-	var (
-		raw = make([]byte, a.size, a.size)
-		i   int
-		buf uint16
-		n   uint
-	)
-	for _, v := range a.vals {
-		buf += uint16(v << n)
-		n += a.bits
-		for n >= 8 {
-			raw[i] = byte(buf)
-			i++
-			buf = buf >> 8
-			n -= 8
-		}
+	if a.n < a.bits {
+		v := a.raw[a.offset]
+		a.offset++
+		a.buf += uint16(v) << a.n
+		a.n += 8
 	}
-	if n > 0 {
-		raw[i] = byte(buf)
-	}
+	res := int(a.buf & a.mask)
+	a.i++
+	a.buf = (a.buf >> a.bits)
+	a.n -= a.bits
 
-	return raw
-}
-
-// Parse bits from bytes.
-func (a *BitArray) Parse(raw []byte) {
-	if len(raw) != a.Size() {
-		panic("need <.Size()> bytes")
-	}
-
-	var (
-		mask = uint16(1<<a.bits) - 1
-		i    uint
-		buf  uint16
-		n    uint
-	)
-	for _, v := range raw {
-		buf += uint16(v) << n
-		n += 8
-		for n >= a.bits && i < a.count {
-			a.vals[i] = int(buf & mask)
-			i++
-			buf = (buf >> a.bits)
-			n -= a.bits
-		}
-	}
-
-	a.offset = 0
+	return res
 }
