@@ -74,7 +74,7 @@ func (e *EventHeaderData) MarshalBinary() ([]byte, error) {
 	buf := fast.NewBuffer(raw[header.Size():])
 
 	for _, f := range fields32 {
-		n := writeUint32Compact(buf, f)
+		n := writeUint64Compact(buf, uint64(f))
 		headerW.Push(n)
 	}
 	for _, f := range fields64 {
@@ -100,18 +100,6 @@ func (e *EventHeaderData) MarshalBinary() ([]byte, error) {
 
 	length := header.Size() + buf.Position()
 	return raw[:length], nil
-}
-
-func writeUint32Compact(buf *fast.Buffer, v uint32) (bytes int) {
-	for {
-		buf.WriteByte(byte(v))
-		bytes++
-		v = v >> 8
-		if v == 0 {
-			break
-		}
-	}
-	return
 }
 
 func writeUint64Compact(buf *fast.Buffer, v uint64) (bytes int) {
@@ -157,7 +145,7 @@ func (e *EventHeaderData) UnmarshalBinary(raw []byte) error {
 
 	for _, f := range fields32 {
 		n := headerR.Pop()
-		*f = readUint32Compact(buf, n)
+		*f = uint32(readUint64Compact(buf, n))
 	}
 	for _, f := range fields64 {
 		n := headerR.Pop()
@@ -180,15 +168,6 @@ func (e *EventHeaderData) UnmarshalBinary(raw []byte) error {
 	e.Extra = buf.Read(len(raw) - header.Size() - buf.Position())
 
 	return nil
-}
-
-func readUint32Compact(buf *fast.Buffer, bytes int) uint32 {
-	var v uint32
-	for i, b := range buf.Read(bytes) {
-		v += uint32(b) << uint(8*i)
-	}
-
-	return v
 }
 
 func readUint64Compact(buf *fast.Buffer, bytes int) uint64 {
