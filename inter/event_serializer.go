@@ -56,7 +56,7 @@ func (e *EventHeaderData) MarshalBinary() ([]byte, error) {
 	}
 
 	fcount := uint(len(fields32) + len(fields64) + len(fieldsBool))
-	bits := uint(4) // int64/8 = 8 (bytes count), could be stored in 4 bits
+	bits := uint(3) // int64/8 = 8 (bytes count) - 1 (zero bytes is not used), could be stored in 3 bits
 	header := utils.NewBitArray(bits, fcount)
 
 	maxBytes := header.Size() +
@@ -103,19 +103,25 @@ func (e *EventHeaderData) MarshalBinary() ([]byte, error) {
 }
 
 func writeUint32Compact(buf *fast.Buffer, v uint32) (bytes int) {
-	for v > 0 {
+	for {
 		buf.WriteByte(byte(v))
 		bytes++
 		v = v >> 8
+		if v == 0 {
+			break
+		}
 	}
 	return
 }
 
 func writeUint64Compact(buf *fast.Buffer, v uint64) (bytes int) {
-	for v > 0 {
+	for {
 		buf.WriteByte(byte(v))
 		bytes++
 		v = v >> 8
+		if v == 0 {
+			break
+		}
 	}
 	return
 }
@@ -143,7 +149,7 @@ func (e *EventHeaderData) UnmarshalBinary(raw []byte) error {
 	}
 
 	fcount := uint(len(fields32) + len(fields64) + len(fieldsBool))
-	bits := uint(4) // int64/8 = 8 (bytes count), could be stored in 4 bits
+	bits := uint(3) // int64/8 = 8 (bytes count) - 1 (zero bytes is not used), could be stored in 3 bits
 	header := utils.NewBitArray(bits, fcount)
 
 	headerR := header.Reader(raw[:header.Size()])
