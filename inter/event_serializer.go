@@ -75,11 +75,11 @@ func (e *EventHeaderData) MarshalBinary() ([]byte, error) {
 
 	for _, f := range fields32 {
 		n := writeUint64Compact(buf, uint64(f))
-		headerW.Push(n)
+		headerW.Push(n - 1)
 	}
 	for _, f := range fields64 {
 		n := writeUint64Compact(buf, f)
-		headerW.Push(n)
+		headerW.Push(n - 1)
 	}
 	for _, f := range fieldsBool {
 		if f {
@@ -144,11 +144,11 @@ func (e *EventHeaderData) UnmarshalBinary(raw []byte) error {
 	buf := fast.NewBuffer(raw[header.Size():])
 
 	for _, f := range fields32 {
-		n := headerR.Pop()
+		n := headerR.Pop() + 1
 		*f = uint32(readUint64Compact(buf, n))
 	}
 	for _, f := range fields64 {
-		n := headerR.Pop()
+		n := headerR.Pop() + 1
 		*f = readUint64Compact(buf, n)
 	}
 	for _, f := range fieldsBool {
