@@ -1,6 +1,8 @@
 package inter
 
 import (
+	"bytes"
+	"math"
 	"math/rand"
 	"testing"
 
@@ -12,22 +14,41 @@ import (
 	"github.com/Fantom-foundation/go-lachesis/inter/idx"
 )
 
-func TestEventHeaderData_EncodeRLP(t *testing.T) {
+func TestEventHeaderDataSerialization(t *testing.T) {
 	assertar := assert.New(t)
 
-	header0 := FakeEvent().EventHeaderData
-	buf, err := rlp.EncodeToBytes(&header0)
-	if !assertar.NoError(err) {
-		return
+	ee := map[string]EventHeaderData{
+		"empty": EventHeaderData{
+			Parents: hash.Events{},
+			Extra:   []uint8{},
+		},
+		"max": EventHeaderData{
+			Epoch:        idx.Epoch(math.MaxUint32),
+			GasPowerLeft: math.MaxUint64,
+			Parents: hash.Events{
+				hash.BytesToEvent(bytes.Repeat([]byte{math.MaxUint8}, 32)),
+			},
+			Extra: []uint8{},
+		},
+		"random": FakeEvent().EventHeaderData,
 	}
 
-	var header1 EventHeaderData
-	err = rlp.DecodeBytes(buf, &header1)
-	if !assertar.NoError(err) {
-		return
-	}
+	for name, header0 := range ee {
+		buf, err := rlp.EncodeToBytes(&header0)
+		if !assertar.NoError(err) {
+			return
+		}
 
-	assert.EqualValues(t, header0, header1)
+		var header1 EventHeaderData
+		err = rlp.DecodeBytes(buf, &header1)
+		if !assertar.NoError(err) {
+			return
+		}
+
+		if !assert.EqualValues(t, header0, header1, name) {
+			return
+		}
+	}
 }
 
 func BenchmarkEventHeaderData_EncodeRLP(b *testing.B) {
