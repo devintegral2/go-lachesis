@@ -23,47 +23,92 @@ import (
 
 type (
 	Node struct {
-		AddrURL		string
+		AddrURL string
 
-		SendCount	int64
-		FirstSend	time.Time
-		ErrorsCount int64
-		TimeoutCount int64
+		SendCount        int64
+		FirstSend        time.Time
+		ErrorsCount      int64
+		MissedCount		 int64
+		TimeoutCount     int64
+		RandomFlowFactor int
 
-		LastSend	time.Time
+		LastSend time.Time
 
 		client *ethclient.Client
 
-		trxs			[]common.Hash
-		lastTrxClean	time.Time
+		trxs         []common.Hash
+		lastTrxClean time.Time
 	}
 
 	Account struct {
-		Address		*common.Address
-		PvtKey		*ecdsa.PrivateKey
+		Address *common.Address
+		PvtKey  *ecdsa.PrivateKey
 	}
-)
-
-const (
-	cleanTrxCounter = 10
 )
 
 var (
-	nodes				[]Node
-	accounts			[]Account
-	maxFlowSpeedInSec 	int64
+	nodes             []Node
+	accounts          []Account
+	maxFlowSpeedInMin int
 
-	DonorAddress 		common.Address
-	DonorPvtKey			*ecdsa.PrivateKey
+	donorAddress       common.Address
+	donorPvtKey        *ecdsa.PrivateKey
+	mode               int
+	trxBatchSize       int
+	trxMaxCount        int
+	waitConfirmTimeout = time.Minute
 )
 
-func init() {
+func main() {
+	var (
+		nodesListFile   string
+		accCount        int
+		donorAddrHex    string
+		donorKeyHex     string
+		randomFlowDelta int
+	)
+
+	flag.StringVar(&nodesListFile, "nodes", "", "Path of nodes (validators) list file")
+	flag.IntVar(&trxBatchSize, "trx_batch", 10, "Count of transactions in batch")
+	flag.IntVar(&accCount, "acc", 1, "Count of generated accounts")
+	flag.IntVar(&trxMaxCount, "trx_count", 0, "Max count of transactions for sending to one node")
+	flag.IntVar(&maxFlowSpeedInMin, "max_flow", 0, "Max send count in minute for one node")
+	flag.IntVar(&randomFlowDelta, "rand_flow", 0, "Random delta for different flow to different nodes (only if -max_flow using)")
+	flag.StringVar(&donorAddrHex, "donor_addr", "", "Address of donor (0xHEX)")
+	flag.StringVar(&donorKeyHex, "donor_key", "", "Private key of donor (HEX)")
+	flag.IntVar(&mode, "mode", 2, `Mode of waiting confirm transactions: 
+0 - not wait
+1 - detect finish transactions without waiting 
+2 - wait all transaction finished after batch
+`)
+	flag.Parse()
+
+	if nodesListFile == "" || donorAddrHex == "" || donorKeyHex == "" {
+		flag.PrintDefaults()
+		return
+	}
+
+	// Parse donor data
+	// donorAddress = common.HexToAddress("0xf9352d0ca3820e4b16b5242c74adb0e26471fbea")
+	// donorPvtKey, err = crypto.HexToECDSA("ae2037b61158065161bc5eeafe43b227663f1614c123ae5f378e8201d3a5f3e5")
 	var err error
-	DonorAddress = common.HexToAddress("0xf9352d0ca3820e4b16b5242c74adb0e26471fbea")
-	DonorPvtKey, err = crypto.HexToECDSA("ae2037b61158065161bc5eeafe43b227663f1614c123ae5f378e8201d3a5f3e5")
+	donorAddress = common.HexToAddress(donorAddrHex)
+	donorPvtKey, err = crypto.HexToECDSA(donorKeyHex)
 	if err != nil {
 		log.Panicf("Error decode donor private key: %s\n", err)
 	}
+
+	// Parse nodes file
+	parseNodesFile(nodesListFile, randomFlowDelta)
+
+	// Parse accounts file
+	generateAccounts(accCount)
+
+	// Transfer started funds
+	transferFunds()
+
+	// Run main loop of sending
+	mainLoop()
 }
 
 // InitClient initialize node client connection
@@ -76,22 +121,25 @@ func (n *Node) InitClient() {
 	n.lastTrxClean = time.Now().UTC()
 }
 
-// CalcAvgFlowSpeed calculate current average flow speed
+// CalcAvgFlowSpeed calculate current average flow speed (transactions/minute)
 func (n *Node) CalcAvgFlowSpeed() float64 {
 	if n.SendCount <= 0 {
 		return 0
 	}
-	return float64(n.SendCount) / (time.Now().UTC().Sub(n.FirstSend)).Seconds()
+	return float64(n.SendCount) * 60 / (time.Now().UTC().Sub(n.FirstSend)).Seconds()
 }
 
 // DelayForNextSend calculate delay if flow speed great then max flow speed
 func (n *Node) DelayForNextSend() time.Duration {
-	delay := float64( n.SendCount / maxFlowSpeedInSec ) - time.Now().UTC().Sub(n.FirstSend).Seconds()
+	delay := float64(n.SendCount*60/int64(maxFlowSpeedInMin+n.RandomFlowFactor)) - time.Now().UTC().Sub(n.FirstSend).Seconds()
+	if delay < 0 {
+		delay = 0
+	}
 	return time.Duration(delay) * time.Second
 }
 
 // SendRandomTransaction send transfer from random account to random account
-func  (n *Node) SendRandomTransaction() (*common.Hash, error) {
+func (n *Node) SendRandomTransaction() (*common.Hash, error) {
 	from := getRandomAccount()
 	to := getRandomAccount()
 
@@ -115,7 +163,7 @@ func (n *Node) SendTransfer(from, to *Account, amount *big.Int) (*common.Hash, e
 		return nil, err
 	}
 
-	gasLimit := uint64(21000)               // in units
+	gasLimit := uint64(21000) // in units
 	gasPrice := big.NewInt(0)
 
 	var data []byte
@@ -140,53 +188,93 @@ func (n *Node) SendTransfer(from, to *Account, amount *big.Int) (*common.Hash, e
 
 // SendLoopForNode create infinity loop of sending random transactions on node
 func (n *Node) SendLoopForNode(wg *sync.WaitGroup) {
-	trxN := 0
-	if n.trxs == nil {
+	trxInBatch := 0
+	trxCount := 0
+	if n.trxs == nil && mode != 0 {
 		n.trxs = make([]common.Hash, 0)
 	}
 	n.lastTrxClean = time.Now().UTC()
 	for {
+		// Check max transactions count limit
+		if trxMaxCount > 0 {
+			if trxCount >= trxMaxCount {
+				break
+			}
+		}
+		trxCount++
+
 		// Check MaxFlowSpeed
-		if maxFlowSpeedInSec > 0 {
+		if maxFlowSpeedInMin > 0 {
 			currentFlowSpeed := n.CalcAvgFlowSpeed()
-			if currentFlowSpeed > float64(maxFlowSpeedInSec) {
-				time.Sleep(n.DelayForNextSend())
+			if currentFlowSpeed > float64(maxFlowSpeedInMin+n.RandomFlowFactor) {
+				delay := n.DelayForNextSend()
+				if delay > 0 {
+					fmt.Print(".")
+					time.Sleep(delay)
+				}
 				continue
 			}
 		}
 
 		trxHash, err := n.SendRandomTransaction()
-		if err == nil {
+		if err == nil && mode != 0 {
 			n.trxs = append(n.trxs, *trxHash)
 		}
 
-		trxN++
-		if trxN >= cleanTrxCounter {
-			trxN = 0
-			for {
-				if n.CleanFinishedTransactions() == 0 {
-					break
+		trxInBatch++
+		switch mode {
+		case 2:
+			// Wait confirm all transactions
+			if trxInBatch >= trxBatchSize {
+				trxInBatch = 0
+				for {
+					if n.CleanFinishedTransactions(waitConfirmTimeout) == 0 {
+						break
+					}
+					// log.Printf("Wait finish transactions for node %s (%d)\n", n.AddrURL, len(n.trxs))
+					fmt.Print(".")
+					time.Sleep(time.Second)
 				}
-				// log.Printf("Wait finish transactions for node %s (%d)\n", n.AddrURL, len(n.trxs))
-				fmt.Print(".")
-				time.Sleep(time.Second)
+				speed := int64(n.CalcAvgFlowSpeed())
+				fmt.Printf("\n")
+				log.Printf("Node %s: \tok = %d, \terrors = %d, missed = %d, \ttimeouts = %d, \tpending = %d (%d tx/min)\n",
+					n.AddrURL, n.SendCount, n.ErrorsCount, n.MissedCount, n.TimeoutCount, len(n.trxs), speed)
 			}
-			speed := int64(n.CalcAvgFlowSpeed() * 60)
-			fmt.Printf("\n")
-			log.Printf("Node %s: ok = %d, \terr = %d, \ttimeouts = %d, \tpending = %d (%d tx/min)\n",
-				n.AddrURL, n.SendCount, n.ErrorsCount, n.TimeoutCount, len(n.trxs), speed)
+		case 1:
+			// Check confirmed transactions, but not wait
+			if trxInBatch >= trxBatchSize {
+				trxInBatch = 0
+				n.CleanFinishedTransactions(10 * waitConfirmTimeout)
+				speed := int64(n.CalcAvgFlowSpeed())
+				if maxFlowSpeedInMin > 0 {
+					fmt.Printf("\n")
+				}
+				log.Printf("Node %s: \tok = %d (%d), \terrors = %d, missed = %d, \ttimeouts = %d, \tpending = %d (%d tx/min)\n",
+					n.AddrURL, n.SendCount, int(n.SendCount)-len(n.trxs), n.ErrorsCount, n.MissedCount, n.TimeoutCount, len(n.trxs), speed)
+			}
+		case 0:
+			// Not check confirmed transactions
+			if trxInBatch >= trxBatchSize {
+				trxInBatch = 0
+				speed := int64(n.CalcAvgFlowSpeed())
+				if maxFlowSpeedInMin > 0 {
+					fmt.Printf("\n")
+				}
+				log.Printf("Node %s: \tok = %d, \terr = %d (%d tx/min)\n",
+					n.AddrURL, n.SendCount, n.ErrorsCount, speed)
+			}
 		}
 	}
 
 	wg.Done()
 }
 
-func (n *Node) CleanFinishedTransactions() int {
+func (n *Node) CleanFinishedTransactions(timeout time.Duration) int {
 	for i := 0; i < len(n.trxs); i++ {
 		// Check transaction exists
 		t, _, _ := n.client.TransactionByHash(context.Background(), n.trxs[i])
 		if t == nil {
-			n.ErrorsCount++
+			n.MissedCount++
 		}
 
 		// Check transaction receipt
@@ -195,15 +283,15 @@ func (n *Node) CleanFinishedTransactions() int {
 			n.lastTrxClean = time.Now().UTC()
 
 			if i != (len(n.trxs) - 1) {
-				n.trxs[i] = n.trxs[len(n.trxs) - 1]
+				n.trxs[i] = n.trxs[len(n.trxs)-1]
 				i--
 			}
-			n.trxs = n.trxs[0:len(n.trxs) - 1]
+			n.trxs = n.trxs[0 : len(n.trxs)-1]
 		}
 	}
 
-	if time.Now().UTC().Sub(n.lastTrxClean) > (time.Minute) {
-		// Force clean trxs
+	if timeout != 0 && time.Now().UTC().Sub(n.lastTrxClean) > timeout {
+		// Force clean trxs by timeout
 		for i := 0; i < len(n.trxs); i++ {
 			n.TimeoutCount++
 			log.Printf("Trx timeout: %s\n", n.trxs[i].Hex())
@@ -215,37 +303,7 @@ func (n *Node) CleanFinishedTransactions() int {
 	return len(n.trxs)
 }
 
-
-func main() {
-	var (
-		nodesListFile   string
-		count			int
-	)
-
-	flag.StringVar(&nodesListFile, 		"nodes",		"", 	"Path of nodes (validators) list file")
-	flag.IntVar(&count, 				"acc", 		1, 	"Count of generated accounts")
-	flag.Int64Var(&maxFlowSpeedInSec, 	"max_flow",	0,	"Max send count in second for one node")
-	flag.Parse()
-
-	if nodesListFile == "" {
-		flag.PrintDefaults()
-		return
-	}
-
-	// Parse nodes file
-	parseNodesFile(nodesListFile)
-
-	// Parse accounts file
-	generateAccounts(count)
-
-	// Transfer started funds
-	transferFunds()
-
-	// Run main loop of sending
-	mainLoop()
-}
-
-func parseNodesFile(fileName string) {
+func parseNodesFile(fileName string, randomFlow int) {
 	nodes = make([]Node, 0, 30)
 	nodesFile, err := os.Open(fileName)
 	if err != nil {
@@ -262,19 +320,18 @@ func parseNodesFile(fileName string) {
 		line = strings.TrimRight(line, "\n")
 		line = strings.TrimRight(line, "\r")
 
-		log.Printf("Read node: %s\n", line)
-
 		newNode := Node{
-			AddrURL:   line,
-			SendCount: 0,
-			FirstSend: time.Now().UTC(),
-			LastSend:  time.Now().UTC(),
+			AddrURL:          line,
+			SendCount:        0,
+			FirstSend:        time.Now().UTC(),
+			LastSend:         time.Now().UTC(),
+			RandomFlowFactor: randomFlow/2 - rand.Intn(randomFlow),
 		}
 		newNode.InitClient()
-
-		log.Printf("Append node: %+v\n", newNode)
 		nodes = append(nodes, newNode)
 	}
+
+	log.Printf("Read nodes: %d\n", len(nodes))
 }
 
 func generateAccounts(count int) {
@@ -291,38 +348,37 @@ func generateAccounts(count int) {
 		accounts[i].Address = &address
 		accounts[i].PvtKey = key
 	}
-	log.Printf("Account addr: %x\n", accounts[0].Address)
-	log.Printf("Account pvtkey: %x\n", accounts[0].PvtKey.D.Bytes())
+	log.Printf("Generate accounts: %d\n", len(accounts))
 }
 
 func transferFunds() {
-	fmt.Printf("Create funds...\n")
+	log.Printf("Create funds...\n")
 	node := nodes[0]
 	for _, acc := range accounts {
 		from := Account{
-			Address: &DonorAddress,
-			PvtKey:  DonorPvtKey,
+			Address: &donorAddress,
+			PvtKey:  donorPvtKey,
 		}
 
 		trxHash, err := node.SendTransfer(&from, &acc, big.NewInt(100000000))
 		if err != nil {
 			log.Panicf("Error transfer funds from donor: %s", err)
 		}
-		fmt.Printf("Create funds: %s\n", acc.Address.Hex())
+		log.Printf("Create funds: %s\n", acc.Address.Hex())
 
 		node.trxs = append(node.trxs, *trxHash)
 	}
-	fmt.Printf("Create funds done\n")
-	fmt.Printf("Wait funds transactions finished...\n")
+	log.Printf("Create funds done\n")
+	log.Printf("Wait funds transactions finished...\n")
 	for {
-		if node.CleanFinishedTransactions() <= 0 {
+		if node.CleanFinishedTransactions(0) <= 0 {
 			break
 		}
 		// log.Printf("Wait for finish %d transactions\n", len(node.trxs))
 		fmt.Print(".")
-		time.Sleep(3*time.Second)
+		time.Sleep(3 * time.Second)
 	}
-	fmt.Printf("Funds transactions finished\n")
+	log.Printf("Funds transactions finished\n")
 }
 
 func mainLoop() {
