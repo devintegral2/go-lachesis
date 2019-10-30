@@ -30,3 +30,17 @@ http://localhost:18550
 `-max_flow` - limit of flow speed for sending transaction on each node (transactions/minute).
 
 `-rand_flow` - random factor for create different transactions flow speed to different nodes. For node set flow speed limit as `max_flow +- rand_flow/2`.
+
+## Output
+
+`ok` - count of sended transactions;
+
+`errors` - count of transactions, get error when try send;
+
+`missed` - count of transactions, sended without errors, but not detected on node after some time;
+
+`timeouts` - count of transactions, not confirmed long time (1 minute) after send;
+
+`pending` - count of transactions, wait of confirmation;
+
+Speed of transactions `tx/min` - speed of sending transactions;
