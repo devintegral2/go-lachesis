@@ -237,7 +237,7 @@ func (n *Node) SendLoopForNode(wg *sync.WaitGroup) {
 				}
 				speed := int64(n.CalcAvgFlowSpeed())
 				fmt.Printf("\n")
-				log.Printf("Node %s: \tok = %d, \terrors = %d, missed = %d, \ttimeouts = %d, \tpending = %d (%d tx/min)\n",
+				log.Printf("Node %s: \tok = %d, \terrors = %d, \tmissed = %d, \ttimeouts = %d, \tpending = %d (%d tx/min)\n",
 					n.AddrURL, n.SendCount, n.ErrorsCount, n.MissedCount, n.TimeoutCount, len(n.trxs), speed)
 			}
 		case 1:
@@ -249,7 +249,7 @@ func (n *Node) SendLoopForNode(wg *sync.WaitGroup) {
 				if maxFlowSpeedInMin > 0 {
 					fmt.Printf("\n")
 				}
-				log.Printf("Node %s: \tok = %d (%d), \terrors = %d, missed = %d, \ttimeouts = %d, \tpending = %d (%d tx/min)\n",
+				log.Printf("Node %s: \tok = %d (%d), \terrors = %d, \tmissed = %d, \ttimeouts = %d, \tpending = %d (%d tx/min)\n",
 					n.AddrURL, n.SendCount, int(n.SendCount)-len(n.trxs), n.ErrorsCount, n.MissedCount, n.TimeoutCount, len(n.trxs), speed)
 			}
 		case 0:
