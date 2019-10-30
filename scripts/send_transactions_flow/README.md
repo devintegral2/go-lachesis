@@ -33,7 +33,7 @@ http://localhost:18550
 
 ## Output
 
-`ok` - count of sended transactions;
+`ok` - count of sended transactions (in parentheses - count of processed transactions: confirmed, missed or get timeout);
 
 `errors` - count of transactions, get error when try send;
 
