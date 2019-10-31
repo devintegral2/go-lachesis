@@ -2,6 +2,7 @@ package gossip
 
 import (
 	"bytes"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -34,6 +35,11 @@ type Store struct {
 		Packs     kvdb.KeyValueStore `table:"pack"`
 		PacksNum  kvdb.KeyValueStore `table:"packsnum"`
 
+		ActiveValidatorScores kvdb.KeyValueStore `table:"actvscore"`
+		DirtyValidatorScores  kvdb.KeyValueStore `table:"drtvscore"`
+		BlockParticipation    kvdb.KeyValueStore `table:"blockprtcp"`
+		incMutex              *sync.Mutex
+
 		// API-only tables
 		BlockHashes kvdb.KeyValueStore `table:"blockh"`
 		Receipts    kvdb.KeyValueStore `table:"receipts"`
@@ -46,12 +52,13 @@ type Store struct {
 	}
 
 	cache struct {
-		Events        *lru.Cache `cache:"-"` // store by pointer
-		EventsHeaders *lru.Cache `cache:"-"` // store by pointer
-		Blocks        *lru.Cache `cache:"-"` // store by pointer
-		PackInfos     *lru.Cache `cache:"-"` // store by value
-		Receipts      *lru.Cache `cache:"-"` // store by value
-		TxPositions   *lru.Cache `cache:"-"` // store by pointer
+		Events             *lru.Cache `cache:"-"` // store by pointer
+		EventsHeaders      *lru.Cache `cache:"-"` // store by pointer
+		Blocks             *lru.Cache `cache:"-"` // store by pointer
+		PackInfos          *lru.Cache `cache:"-"` // store by value
+		Receipts           *lru.Cache `cache:"-"` // store by value
+		TxPositions        *lru.Cache `cache:"-"` // store by pointer
+		BlockParticipation *lru.Cache `cache:"-"` // store by pointer
 	}
 
 	tmpDbs
@@ -82,6 +89,7 @@ func NewStore(dbs *flushable.SyncedPool, cfg StoreConfig) *Store {
 	evmTable := no_key_is_err.Wrap(table.New(s.mainDb, []byte("evm_"))) // ETH expects that "not found" is an error
 	s.table.Evm = rawdb.NewDatabase(evmTable)
 	s.table.EvmState = state.NewDatabase(s.table.Evm)
+	s.table.incMutex = &sync.Mutex{}
 
 	s.initTmpDbs()
 	s.initCache()
@@ -96,6 +104,7 @@ func (s *Store) initCache() {
 	s.cache.PackInfos = s.makeCache(s.cfg.PackInfosCacheSize)
 	s.cache.Receipts = s.makeCache(s.cfg.ReceiptsCacheSize)
 	s.cache.TxPositions = s.makeCache(s.cfg.TxPositionsCacheSize)
+	s.cache.BlockParticipation = s.makeCache(64)
 }
 
 // Close leaves underlying database.

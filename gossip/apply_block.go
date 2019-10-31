@@ -1,11 +1,13 @@
 package gossip
 
 import (
+	"github.com/Fantom-foundation/go-lachesis/inter/idx"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"math"
 
 	"github.com/Fantom-foundation/go-lachesis/evm_core"
 	"github.com/Fantom-foundation/go-lachesis/inter"
@@ -112,6 +114,34 @@ func (s *Service) onNewBlock(
 		if receipts.Len() != 0 {
 			s.store.SetReceipts(block.Index, receipts)
 		}
+	}
+
+	// Calc validators score
+	s.store.SetBlockGasUsed(block.Index, block.GasUsed)
+	for v := range validators.Iterate() {
+		// Check validator events in current block
+		eventsInBlock := false
+		for _, evHash := range block.Events {
+			evh := s.store.GetEventHeader(evHash.Epoch(), evHash)
+			if evh.Creator == v {
+				eventsInBlock = true
+				break
+			}
+		}
+
+		// If have not events in block - add missed blocks for validator
+		if !eventsInBlock {
+			s.store.IncBlocksMissed(v)
+			continue
+		}
+
+		missed := s.store.GetBlocksMissed(v)
+		s.store.AddDirtyValidatorsScore(v, block.GasUsed)
+		for i := 1; i < int(math.Min(2, float64(missed))); i++ {
+			usedGas := s.store.GetBlockGasUsed(block.Index - idx.Block(i))
+			s.store.AddDirtyValidatorsScore(v, usedGas)
+		}
+		s.store.ResetBlocksMissed(v)
 	}
 
 	// Notify about new block
