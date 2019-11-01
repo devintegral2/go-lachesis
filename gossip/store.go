@@ -44,6 +44,7 @@ type Store struct {
 		BlockHashes kvdb.KeyValueStore `table:"blockh"`
 		Receipts    kvdb.KeyValueStore `table:"receipts"`
 		TxPositions kvdb.KeyValueStore `table:"txp"`
+		ScoreCheckpoint	kvdb.KeyValueStore `table:"schekpoint"`
 
 		TmpDbs kvdb.KeyValueStore `table:"tmpdbs"`
 
@@ -59,6 +60,8 @@ type Store struct {
 		Receipts           *lru.Cache `cache:"-"` // store by value
 		TxPositions        *lru.Cache `cache:"-"` // store by pointer
 		BlockParticipation *lru.Cache `cache:"-"` // store by pointer
+		BlockHashes        *lru.Cache `cache:"-"` // store by pointer
+		ScoreCheckpoint    *lru.Cache `cache:"-"` // store by pointer
 	}
 
 	tmpDbs
@@ -105,6 +108,8 @@ func (s *Store) initCache() {
 	s.cache.Receipts = s.makeCache(s.cfg.ReceiptsCacheSize)
 	s.cache.TxPositions = s.makeCache(s.cfg.TxPositionsCacheSize)
 	s.cache.BlockParticipation = s.makeCache(64)
+	s.cache.BlockHashes = s.makeCache(s.cfg.BlockCacheSize)
+	s.cache.ScoreCheckpoint = s.makeCache(4)
 }
 
 // Close leaves underlying database.

@@ -1,17 +1,21 @@
 package gossip
 
 import (
-	"github.com/Fantom-foundation/go-lachesis/inter/idx"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"math"
+	"time"
 
 	"github.com/Fantom-foundation/go-lachesis/evm_core"
 	"github.com/Fantom-foundation/go-lachesis/inter"
 	"github.com/Fantom-foundation/go-lachesis/inter/pos"
+)
+
+const (
+	HoursBetweenScoreCheckpoint = 4
 )
 
 // onNewBlock execs ordered txns of new block on state.
@@ -71,9 +75,61 @@ func (s *Service) onNewBlock(
 	s.store.SetBlock(block)
 	s.store.SetBlockIndex(block.Hash(), block.Index)
 
+	// Calc validators score
+	// Step 1
+	for v := range validators.Iterate() {
+		// Check validator events in current block
+		eventsInBlock := false
+		for _, evHash := range block.Events {
+			evh := s.store.GetEventHeader(evHash.Epoch(), evHash)
+			if evh.Creator == v {
+				eventsInBlock = true
+				break
+			}
+		}
+
+		// If have not events in block - add missed blocks for validator
+		if !eventsInBlock {
+			s.store.IncBlocksMissed(v)
+			continue
+		}
+
+		missed := s.store.GetBlocksMissed(v)
+		curBlock := block
+		for i := 0; i < int(math.Min(2, float64(missed))); i++ {
+			s.store.AddDirtyValidatorsScore(v, curBlock.GasUsed)
+			curBlock = s.store.GetBlockByHash(block.PrevHash)
+		}
+		s.store.ResetBlocksMissed(v)
+	}
+
+	// Step 2
+	prevBlock := s.store.GetBlockByHash(block.PrevHash)
+	// TODO: Refactor require for detect change epoch
+	if len(prevBlock.Events) > 0 && len(block.Events) > 0 {
+		if prevBlock.Events[0].Epoch() != block.Events[0].Epoch() {
+			// Epoch changed
+			lastCheckpoint := s.store.GetScoreCheckpoint()
+			if block.Time.Time().Sub(lastCheckpoint.Time()) > HoursBetweenScoreCheckpoint * time.Hour {
+				s.store.MoveDirtyValidatorsToActive()
+				s.store.SetScoreCheckpoint(block.Time)
+			}
+
+			// TODO: skiped part of algoritm
+			/*
+			write snapshot into the contract storage
+				for each V from the validators group
+					write V into the snapshot (including validating power, with active scores)
+
+			choose new validators group. currently, not specified how exactly new group is calculated
+			*/
+		}
+	}
+
 	// new validators
 	// TODO replace with special transactions for changing validators state
 	// TODO the schema below doesn't work in all the cases, and intended only for testing
+	// TODO: Remove when previous block will be released (validators scoring)
 	{
 		newValidators = validators.Copy()
 		for addr := range validators.Iterate() {
@@ -114,34 +170,6 @@ func (s *Service) onNewBlock(
 		if receipts.Len() != 0 {
 			s.store.SetReceipts(block.Index, receipts)
 		}
-	}
-
-	// Calc validators score
-	s.store.SetBlockGasUsed(block.Index, block.GasUsed)
-	for v := range validators.Iterate() {
-		// Check validator events in current block
-		eventsInBlock := false
-		for _, evHash := range block.Events {
-			evh := s.store.GetEventHeader(evHash.Epoch(), evHash)
-			if evh.Creator == v {
-				eventsInBlock = true
-				break
-			}
-		}
-
-		// If have not events in block - add missed blocks for validator
-		if !eventsInBlock {
-			s.store.IncBlocksMissed(v)
-			continue
-		}
-
-		missed := s.store.GetBlocksMissed(v)
-		s.store.AddDirtyValidatorsScore(v, block.GasUsed)
-		for i := 1; i < int(math.Min(2, float64(missed))); i++ {
-			usedGas := s.store.GetBlockGasUsed(block.Index - idx.Block(i))
-			s.store.AddDirtyValidatorsScore(v, usedGas)
-		}
-		s.store.ResetBlocksMissed(v)
 	}
 
 	// Notify about new block
