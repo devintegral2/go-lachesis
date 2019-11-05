@@ -127,3 +127,18 @@ func NameOf(p common.Address) string {
 	h := p.Hash()
 	return hexutil.Encode(h[:3]) + "..."
 }
+
+// IsInListUint - return bool true iv value present in slice
+func IsInListUint(val uint, list []uint) bool {
+	if list == nil || len(list) == 0 {
+		return false
+	}
+
+	for _, v := range list {
+		if v == val {
+			return true
+		}
+	}
+
+	return false
+}

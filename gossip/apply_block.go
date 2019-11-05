@@ -1,6 +1,7 @@
 package gossip
 
 import (
+	"github.com/Fantom-foundation/go-lachesis/utils"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -124,6 +125,40 @@ func (s *Service) onNewBlock(
 			choose new validators group. currently, not specified how exactly new group is calculated
 			*/
 		}
+	}
+
+	// POI calculations
+	poiPeriod :=  PoiPeriod(block.Time.Unix())
+	s.store.AddPOIGasUsed(poiPeriod, block.GasUsed)
+
+	for idx, trx := range evmBlock.Transactions {
+		if utils.IsInListUint(uint(idx), skipped) {
+			continue
+		}
+
+		signer := types.NewEIP155Signer(params.AllEthashProtocolChanges.ChainID)
+		sender, err := signer.Sender(trx)
+		if err != nil {
+			s.Log.Crit("Failed to get sender from transaction", "err", err)
+		}
+
+		senderGasUsed := s.store.GetAddressGasUsed(sender)
+		senderLastTrxTime := s.store.GetAddressLastTrxTime(sender)
+		prevPoiPeriod := PoiPeriod(int64(senderLastTrxTime))
+
+		if prevPoiPeriod != poiPeriod {
+			if s.store.GetDelegatorValue(sender) > 0 {
+				for v := range validators.Iterate() {
+					if s.store.GetDelegationValue(v, sender) > 0 {
+						s.store.CalcValidatorsPOI(v, sender, prevPoiPeriod)
+					}
+				}
+			}
+			s.store.SetAddressGasUsed(sender, 0)
+		}
+
+		s.store.SetAddressLastTrxTime(sender, uint64(block.Time.Unix()))
+		s.store.SetAddressGasUsed(sender, senderGasUsed + trx.Gas())
 	}
 
 	// new validators

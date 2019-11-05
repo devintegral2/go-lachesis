@@ -38,13 +38,18 @@ type Store struct {
 		ActiveValidatorScores kvdb.KeyValueStore `table:"actvscore"`
 		DirtyValidatorScores  kvdb.KeyValueStore `table:"drtvscore"`
 		BlockParticipation    kvdb.KeyValueStore `table:"blockprtcp"`
+		Delegates			  kvdb.KeyValueStore `table:"delegates"`
 		incMutex              *sync.Mutex
 
 		// API-only tables
-		BlockHashes kvdb.KeyValueStore `table:"blockh"`
-		Receipts    kvdb.KeyValueStore `table:"receipts"`
-		TxPositions kvdb.KeyValueStore `table:"txp"`
-		ScoreCheckpoint	kvdb.KeyValueStore `table:"schekpoint"`
+		BlockHashes        kvdb.KeyValueStore `table:"blockh"`
+		Receipts           kvdb.KeyValueStore `table:"receipts"`
+		TxPositions        kvdb.KeyValueStore `table:"txp"`
+		ScoreCheckpoint    kvdb.KeyValueStore `table:"schekpoint"`
+		ValidatorPOIScore  kvdb.KeyValueStore `table:"valpoiscore"`
+		AddressGasUsed     kvdb.KeyValueStore `table:"addrgasused"`
+		AddressLastTrxTime kvdb.KeyValueStore `table:"addrlasttrxtm"`
+		TotalPOIGasUsed    kvdb.KeyValueStore `table:"poigasused"`
 
 		TmpDbs kvdb.KeyValueStore `table:"tmpdbs"`
 
