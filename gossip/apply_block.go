@@ -116,14 +116,12 @@ func (s *Service) onNewBlock(
 				s.store.SetScoreCheckpoint(block.Time)
 			}
 
-			// TODO: skiped part of algoritm
-			/*
-			write snapshot into the contract storage
-				for each V from the validators group
-					write V into the snapshot (including validating power, with active scores)
-
-			choose new validators group. currently, not specified how exactly new group is calculated
-			*/
+			// Save and switch new validators group in to contract storage
+			err = s.store.SaveValidatorsSnapshotGroup()
+			if err != nil {
+				s.Log.Crit("Error when save validators snapshot group", "err", err)
+			}
+			s.store.SwitchValidatorsSnapshotGroup()
 		}
 	}
 
