@@ -33,6 +33,9 @@ func (s sortedRoots) Less(i, j int) bool {
 // This root serves as a "checkpoint" within DAG, as it's guaranteed to be final and consistent unless more than 1/3W are Byzantine.
 // Other validators will come to the same Atropos not later than current highest frame + 2.
 func (el *Election) chooseAtropos() (*Res, error) {
+	DecidedRootsLock.Lock()
+	defer DecidedRootsLock.Unlock()
+
 	finalRoots := make(sortedRoots, 0, el.validators.Len())
 	// fill yesRoots
 	for validator := range el.validators.Iterate() {

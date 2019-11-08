@@ -4,6 +4,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"math/big"
+	"sync"
 )
 
 type (
@@ -22,6 +23,8 @@ type (
 
 		quorum Stake
 		sum    Stake
+
+		lock sync.Locker
 	}
 )
 
@@ -56,11 +59,15 @@ func newStakeCounter(vv Validators) *StakeCounter {
 		quorum:     vv.Quorum(),
 		already:    make(map[common.Address]struct{}),
 		sum:        0,
+		lock:		&sync.Mutex{},
 	}
 }
 
 // Count validator and return true if it hadn't counted before.
 func (s *StakeCounter) Count(addr common.Address) bool {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
 	if _, ok := s.already[addr]; ok {
 		return false
 	}
@@ -72,10 +79,16 @@ func (s *StakeCounter) Count(addr common.Address) bool {
 
 // HasQuorum achieved.
 func (s *StakeCounter) HasQuorum() bool {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
 	return s.sum >= s.quorum
 }
 
 // Sum of counted stakes.
 func (s *StakeCounter) Sum() Stake {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
 	return s.sum
 }

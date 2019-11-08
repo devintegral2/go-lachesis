@@ -3,6 +3,7 @@ package vector
 import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/hashicorp/golang-lru"
+	"sync"
 
 	"github.com/Fantom-foundation/go-lachesis/hash"
 	"github.com/Fantom-foundation/go-lachesis/inter"
@@ -30,7 +31,8 @@ type Index struct {
 
 	bi *branchesInfo
 
-	getEvent func(hash.Event) *inter.EventHeaderData
+	getEventFunc  func(hash.Event) *inter.EventHeaderData
+	mutexGetEvent *sync.Mutex
 
 	vecDb kvdb.FlushableKeyValueStore
 	table struct {
@@ -56,6 +58,15 @@ type Index struct {
 	logger.Instance
 }
 
+func (vi *Index) getEvent(e hash.Event) *inter.EventHeaderData {
+	vi.mutexGetEvent.Lock()
+	defer vi.mutexGetEvent.Unlock()
+
+	res := vi.getEventFunc(e)
+
+	return res
+}
+
 // NewIndex creates Index instance.
 func NewIndex(validators pos.Validators, db kvdb.KeyValueStore, getEvent func(hash.Event) *inter.EventHeaderData) *Index {
 	cache, _ := lru.New(forklessCauseCacheSize)
@@ -77,7 +88,8 @@ func NewIndex(validators pos.Validators, db kvdb.KeyValueStore, getEvent func(ha
 // Reset resets buffers.
 func (vi *Index) Reset(validators pos.Validators, db kvdb.KeyValueStore, getEvent func(hash.Event) *inter.EventHeaderData) {
 	// we use wrapper to be able to drop failed events by dropping cache
-	vi.getEvent = getEvent
+	vi.getEventFunc = getEvent
+	vi.mutexGetEvent = &sync.Mutex{}
 	vi.vecDb = flushable.Wrap(db)
 	vi.validators = validators.Copy()
 	vi.validatorIdxs = validators.Idxs()

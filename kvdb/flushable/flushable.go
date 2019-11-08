@@ -3,13 +3,11 @@ package flushable
 import (
 	"bytes"
 	"errors"
-	"sync"
-
+	"github.com/Fantom-foundation/go-lachesis/kvdb"
 	rbt "github.com/emirpasic/gods/trees/redblacktree"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethdb"
-
-	"github.com/Fantom-foundation/go-lachesis/kvdb"
+	"sync"
 )
 
 var (
@@ -26,7 +24,7 @@ type Flushable struct {
 	modified       *rbt.Tree // modified, comparing to parent, pairs. deleted values are nil
 	sizeEstimation *int
 
-	lock *sync.Mutex // we have no guarantees that rbt.Tree works with concurrent reads, so we can't use MutexRW
+	lock sync.Locker // we have no guarantees that rbt.Tree works with concurrent reads, so we can't use MutexRW
 }
 
 // Wrap underlying db.
@@ -49,7 +47,7 @@ func WrapWithDrop(parent kvdb.KeyValueStore, drop func()) *Flushable {
 		underlying:     parent,
 		onDrop:         drop,
 		modified:       rbt.NewWithStringComparator(),
-		lock:           new(sync.Mutex),
+		lock:			&sync.Mutex{},
 		sizeEstimation: new(int),
 	}
 }
@@ -234,7 +232,7 @@ func (w *Flushable) Compact(start []byte, limit []byte) error {
  */
 
 type iterator struct {
-	lock *sync.Mutex
+	lock sync.Locker
 
 	tree *rbt.Tree
 

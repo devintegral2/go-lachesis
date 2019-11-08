@@ -2,6 +2,7 @@ package poset
 
 import (
 	"bytes"
+	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
 
@@ -42,26 +43,72 @@ const (
 	eventIDSize = 32
 )
 
+type stopFlagType struct {
+	stop bool
+	lock *sync.Mutex
+}
+
+func NewStopFlag() *stopFlagType {
+	return &stopFlagType{
+		stop: false,
+		lock: &sync.Mutex{},
+	}
+}
+
+func (f *stopFlagType) IsStoped() bool {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+
+	return f.stop
+}
+
+func (f *stopFlagType) Stop() {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+
+	f.stop = true
+}
+
 // ForEachRoot iterates all the roots in the specified frame
-func (s *Store) ForEachRoot(f idx.Frame, do func(f idx.Frame, from common.Address, root hash.Event) bool) {
+func (s *Store) ForEachRoot(parallel bool, f idx.Frame, do func(f idx.Frame, from common.Address, root hash.Event) bool) {
+
 	it := s.epochTable.Roots.NewIteratorWithStart(f.Bytes())
+
+	stop := NewStopFlag()
+	wg := sync.WaitGroup{}
+
 	defer it.Release()
-	for it.Next() {
-		key := it.Key()
-		if len(key) != frameSize+addrSize+eventIDSize {
-			s.Log.Crit("Roots table: incorrect key len", "len", len(key))
-		}
-		actualF := idx.BytesToFrame(key[:frameSize])
-		actualCreator := common.BytesToAddress(key[frameSize : frameSize+addrSize])
-		actualID := hash.BytesToEvent(key[frameSize+addrSize:])
-		if actualF < f {
-			s.Log.Crit("Roots table: invalid frame", "frame", f, "expected", actualF)
+	for !stop.IsStoped() && it.Next() {
+		k := it.Key()
+		wg.Add(1)
+
+		block := func(key []byte) {
+			defer wg.Done()
+
+			if len(key) != frameSize+addrSize+eventIDSize {
+				s.Log.Crit("Roots table: incorrect key len", "len", len(key))
+			}
+			actualF := idx.BytesToFrame(key[:frameSize])
+			actualCreator := common.BytesToAddress(key[frameSize : frameSize+addrSize])
+			actualID := hash.BytesToEvent(key[frameSize+addrSize:])
+			if actualF < f {
+				s.Log.Crit("Roots table: invalid frame", "frame", f, "expected", actualF)
+			}
+
+			if !stop.IsStoped() {
+				if !do(actualF, actualCreator, actualID) {
+					stop.Stop()
+				}
+			}
 		}
 
-		if !do(actualF, actualCreator, actualID) {
-			break
+		if parallel {
+			go block(k)
+		} else {
+			block(k)
 		}
 	}
+	wg.Wait()
 	if it.Error() != nil {
 		s.Log.Crit("Failed to iterate keys", "err", it.Error())
 	}

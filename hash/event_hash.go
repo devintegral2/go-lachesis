@@ -3,12 +3,12 @@ package hash
 import (
 	"bytes"
 	"fmt"
+	"github.com/ethereum/go-ethereum/common"
+	"golang.org/x/crypto/sha3"
 	"math/big"
 	"math/rand"
 	"strings"
-
-	"github.com/ethereum/go-ethereum/common"
-	"golang.org/x/crypto/sha3"
+	"sync"
 
 	"github.com/Fantom-foundation/go-lachesis/inter/idx"
 )
@@ -33,6 +33,7 @@ type (
 var (
 	// ZeroEvent is a hash of virtual initial event.
 	ZeroEvent = Event{}
+	eventsSetMutex = &sync.Mutex{}
 )
 
 /*
@@ -122,6 +123,9 @@ func NewEventsSet(h ...Event) EventsSet {
 
 // Copy copies events to a new structure.
 func (hh EventsSet) Copy() EventsSet {
+	eventsSetMutex.Lock()
+	defer eventsSetMutex.Unlock()
+
 	ee := make(EventsSet, len(hh))
 	for k, v := range hh {
 		ee[k] = v
@@ -132,6 +136,9 @@ func (hh EventsSet) Copy() EventsSet {
 
 // String returns human readable string representation.
 func (hh EventsSet) String() string {
+	eventsSetMutex.Lock()
+	defer eventsSetMutex.Unlock()
+
 	ss := make([]string, 0, len(hh))
 	for h := range hh {
 		ss = append(ss, h.String())
@@ -141,6 +148,9 @@ func (hh EventsSet) String() string {
 
 // Slice returns whole index as slice.
 func (hh EventsSet) Slice() Events {
+	eventsSetMutex.Lock()
+	defer eventsSetMutex.Unlock()
+
 	arr := make(Events, len(hh))
 	i := 0
 	for h := range hh {
@@ -152,6 +162,9 @@ func (hh EventsSet) Slice() Events {
 
 // Add appends hash to the index.
 func (hh EventsSet) Add(hash ...Event) (changed bool) {
+	eventsSetMutex.Lock()
+	defer eventsSetMutex.Unlock()
+
 	for _, h := range hash {
 		if _, ok := hh[h]; !ok {
 			hh[h] = struct{}{}
@@ -163,6 +176,9 @@ func (hh EventsSet) Add(hash ...Event) (changed bool) {
 
 // Erase erase hash from the index.
 func (hh EventsSet) Erase(hash ...Event) (changed bool) {
+	eventsSetMutex.Lock()
+	defer eventsSetMutex.Unlock()
+
 	for _, h := range hash {
 		if _, ok := hh[h]; ok {
 			delete(hh, h)
@@ -174,6 +190,9 @@ func (hh EventsSet) Erase(hash ...Event) (changed bool) {
 
 // Contains returns true if hash is in.
 func (hh EventsSet) Contains(hash Event) bool {
+	eventsSetMutex.Lock()
+	defer eventsSetMutex.Unlock()
+
 	_, ok := hh[hash]
 	return ok
 }

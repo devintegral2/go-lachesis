@@ -2,17 +2,26 @@ package election
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/Fantom-foundation/go-lachesis/hash"
+)
+
+var (
+	VotesLock = &sync.Mutex{}
+	DecidedRootsLock = &sync.Mutex{}
 )
 
 // ProcessRoot calculates Atropos votes only for the new root.
 // If this root observes that the current election is decided, then @return decided Atropos
 func (el *Election) ProcessRoot(newRoot RootAndSlot) (*Res, error) {
+	DecidedRootsLock.Lock()
 	if len(el.decidedRoots) == el.validators.Len() {
+		DecidedRootsLock.Unlock()
 		// current election is already decided
 		return el.chooseAtropos()
 	}
+	DecidedRootsLock.Unlock()
 
 	if newRoot.Slot.Frame <= el.frameToDecide {
 		// too old root, out of interest for current election
@@ -49,7 +58,9 @@ func (el *Election) ProcessRoot(newRoot RootAndSlot) (*Res, error) {
 					fromRoot:     observedRoot.Root,
 				}
 
+				VotesLock.Lock()
 				if vote, ok := el.votes[vid]; ok {
+					VotesLock.Unlock()
 					if vote.yes && subjectHash != nil && *subjectHash != vote.observedRoot {
 						return nil, fmt.Errorf("forkless caused by 2 fork roots => more than 1/3W are Byzantine (%s != %s, election frame=%d, validator=%s)",
 							subjectHash.String(), vote.observedRoot.String(), el.frameToDecide, validatorSubject.String())
@@ -67,6 +78,7 @@ func (el *Election) ProcessRoot(newRoot RootAndSlot) (*Res, error) {
 							subjectHash.String(), el.frameToDecide, validatorSubject.String())
 					}
 				} else {
+					VotesLock.Unlock()
 					el.Log.Crit("Every root must vote for every not decided subject. Possibly roots are processed out of order",
 						"root", newRoot.Root.String())
 				}
@@ -88,7 +100,9 @@ func (el *Election) ProcessRoot(newRoot RootAndSlot) (*Res, error) {
 			// It's guaranteed to be final and consistent unless more than 1/3W are Byzantine.
 			vote.decided = yesVotes.HasQuorum() || noVotes.HasQuorum()
 			if vote.decided {
+				DecidedRootsLock.Lock()
 				el.decidedRoots[validatorSubject] = vote
+				DecidedRootsLock.Unlock()
 			}
 		} else {
 			continue // we shouldn't be here, we checked it above the loop
@@ -98,10 +112,14 @@ func (el *Election) ProcessRoot(newRoot RootAndSlot) (*Res, error) {
 			fromRoot:     newRoot.Root,
 			forValidator: validatorSubject,
 		}
+		VotesLock.Lock()
 		el.votes[vid] = vote
+		VotesLock.Unlock()
 	}
 
+	DecidedRootsLock.Lock()
 	frameDecided := len(el.decidedRoots) == el.validators.Len()
+	DecidedRootsLock.Unlock()
 	if frameDecided {
 		return el.chooseAtropos()
 	}

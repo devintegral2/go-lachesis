@@ -1,10 +1,6 @@
 package poset
 
 import (
-	"github.com/Fantom-foundation/go-lachesis/utils"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/pkg/errors"
-
 	"github.com/Fantom-foundation/go-lachesis/event_check/epoch_check"
 	"github.com/Fantom-foundation/go-lachesis/hash"
 	"github.com/Fantom-foundation/go-lachesis/inter"
@@ -12,7 +8,11 @@ import (
 	"github.com/Fantom-foundation/go-lachesis/lachesis"
 	"github.com/Fantom-foundation/go-lachesis/logger"
 	"github.com/Fantom-foundation/go-lachesis/poset/election"
+	"github.com/Fantom-foundation/go-lachesis/utils"
 	"github.com/Fantom-foundation/go-lachesis/vector"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/pkg/errors"
+	"sync"
 )
 
 // Poset processes events to get consensus.
@@ -177,9 +177,14 @@ func (p *Poset) processRoot(f idx.Frame, from common.Address, id hash.Event) (de
 func (p *Poset) processKnownRoots() *election.Res {
 	// iterate all the roots from LastDecidedFrame+1 to highest, call processRoot for each
 	var decided *election.Res
-	p.store.ForEachRoot(p.LastDecidedFrame+1, func(f idx.Frame, from common.Address, root hash.Event) bool {
+	lock := &sync.Mutex{}
+	p.store.ForEachRoot(false, p.LastDecidedFrame+1, func(f idx.Frame, from common.Address, root hash.Event) bool {
 		p.Log.Debug("Calculate root votes in new election", "root", root.String())
-		decided = p.processRoot(f, from, root)
+		res := p.processRoot(f, from, root)
+
+		lock.Lock()
+		defer lock.Unlock()
+		decided = res
 		return decided == nil
 	})
 	return decided
@@ -208,7 +213,11 @@ func (p *Poset) ProcessEvent(e *inter.Event) (err error) {
 func (p *Poset) forklessCausedByQuorumOn(e *inter.Event, f idx.Frame) bool {
 	observedCounter := p.Validators.NewCounter()
 	// check "observing" prev roots only if called by creator, or if creator has marked that event as root
-	p.store.ForEachRoot(f, func(f idx.Frame, from common.Address, root hash.Event) bool {
+	// lock := &sync.Mutex{}
+	p.store.ForEachRoot(true, f, func(f idx.Frame, from common.Address, root hash.Event) bool {
+		// lock.Lock()
+		// defer lock.Unlock()
+
 		if p.vecClock.ForklessCause(e.Hash(), root) {
 			observedCounter.Count(from)
 		}
