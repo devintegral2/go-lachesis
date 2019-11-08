@@ -3,12 +3,13 @@ package hash
 import (
 	"bytes"
 	"fmt"
-	"github.com/ethereum/go-ethereum/common"
 	"golang.org/x/crypto/sha3"
 	"math/big"
 	"math/rand"
 	"strings"
 	"sync"
+
+	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/Fantom-foundation/go-lachesis/inter/idx"
 )

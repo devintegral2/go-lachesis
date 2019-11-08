@@ -1,6 +1,11 @@
 package poset
 
 import (
+	"github.com/pkg/errors"
+	"sync"
+
+	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/Fantom-foundation/go-lachesis/event_check/epoch_check"
 	"github.com/Fantom-foundation/go-lachesis/hash"
 	"github.com/Fantom-foundation/go-lachesis/inter"
@@ -10,9 +15,6 @@ import (
 	"github.com/Fantom-foundation/go-lachesis/poset/election"
 	"github.com/Fantom-foundation/go-lachesis/utils"
 	"github.com/Fantom-foundation/go-lachesis/vector"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/pkg/errors"
-	"sync"
 )
 
 // Poset processes events to get consensus.
