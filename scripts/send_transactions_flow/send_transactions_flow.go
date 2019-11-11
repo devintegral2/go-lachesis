@@ -353,20 +353,37 @@ func generateAccounts(count int) {
 
 func transferFunds() {
 	log.Printf("Create funds...\n")
+
+	// Transfer not from one account, but over binary-tree
+	fromAccounts := []Account{{	Address: &donorAddress, PvtKey:  donorPvtKey, }}
+	divIndex := int64(1)
+	levelTrxCount := int64(2)
+	baseVal := big.NewInt(100000000)
+
+	toList := []Account{}
 	node := nodes[0]
-	for _, acc := range accounts {
-		from := Account{
-			Address: &donorAddress,
-			PvtKey:  donorPvtKey,
-		}
+	for i := 0; i < len(accounts); i++ {
+		for j := 0; j < len(fromAccounts); j++ {
+			val := big.NewInt(0).Sub(baseVal, big.NewInt(divIndex))
+			for k := 0; k < int(levelTrxCount); k++ {
+				from := fromAccounts[j]
+				to := accounts[i]
 
-		trxHash, err := node.SendTransfer(&from, &acc, big.NewInt(100000000))
-		if err != nil {
-			log.Panicf("Error transfer funds from donor: %s", err)
-		}
-		log.Printf("Create funds: %s\n", acc.Address.Hex())
+				trxHash, err := node.SendTransfer(&from, &to, val)
+				if err != nil {
+					log.Panicf("Error transfer funds from donor: %s", err)
+				}
+				log.Printf("Create funds: %s -> %s = %s\n", from.Address.Hex(), to.Address.Hex(), val.String())
 
-		node.trxs = append(node.trxs, *trxHash)
+				node.trxs = append(node.trxs, *trxHash)
+				toList = append(toList, to)
+
+				i++
+			}
+		}
+		divIndex *= levelTrxCount
+		fromAccounts = append(fromAccounts[:0], toList...)
+		toList = toList[:0]
 	}
 	log.Printf("Create funds done\n")
 	log.Printf("Wait funds transactions finished...\n")
