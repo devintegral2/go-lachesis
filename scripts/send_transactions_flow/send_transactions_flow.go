@@ -320,12 +320,17 @@ func parseNodesFile(fileName string, randomFlow int) {
 		line = strings.TrimRight(line, "\n")
 		line = strings.TrimRight(line, "\r")
 
+		randFlowFactor := randomFlow
+		if randomFlow > 0 {
+			randFlowFactor = randomFlow/2 - rand.Intn(randomFlow)
+		}
+
 		newNode := Node{
 			AddrURL:          line,
 			SendCount:        0,
 			FirstSend:        time.Now().UTC(),
 			LastSend:         time.Now().UTC(),
-			RandomFlowFactor: randomFlow/2 - rand.Intn(randomFlow),
+			RandomFlowFactor: randFlowFactor,
 		}
 		newNode.InitClient()
 		nodes = append(nodes, newNode)
@@ -359,12 +364,13 @@ func transferFunds() {
 	divIndex := int64(1)
 	levelTrxCount := int64(2)
 	baseVal := big.NewInt(100000000)
+	byOneVal := big.NewInt(0).Div(baseVal, big.NewInt(int64(len(accounts))))
 
-	toList := []Account{}
+	var toList []Account
 	node := nodes[0]
 	for i := 0; i < len(accounts); i++ {
 		for j := 0; j < len(fromAccounts); j++ {
-			val := big.NewInt(0).Sub(baseVal, big.NewInt(divIndex))
+			val := big.NewInt(0).Sub(big.NewInt(0).Div(baseVal, big.NewInt(divIndex)), byOneVal)
 			for k := 0; k < int(levelTrxCount); k++ {
 				from := fromAccounts[j]
 				to := accounts[i]
