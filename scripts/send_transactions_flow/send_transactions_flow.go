@@ -371,7 +371,7 @@ func transferFunds() {
 	for i := 0; i < len(accounts); i++ {
 		for j := 0; j < len(fromAccounts); j++ {
 			val := big.NewInt(0).Sub(big.NewInt(0).Div(baseVal, big.NewInt(divIndex)), byOneVal)
-			for k := 0; k < int(levelTrxCount); k++ {
+			for k := 0; k < int(levelTrxCount) && i < len(accounts); k++ {
 				from := fromAccounts[j]
 				to := accounts[i]
 
@@ -387,6 +387,17 @@ func transferFunds() {
 				i++
 			}
 		}
+
+		for {
+			if node.CleanFinishedTransactions(0) == 0 {
+				break
+			}
+			// log.Printf("Wait finish transactions for node %s (%d)\n", n.AddrURL, len(n.trxs))
+			fmt.Print(".")
+			time.Sleep(time.Second)
+		}
+		fmt.Println("")
+
 		divIndex *= levelTrxCount
 		fromAccounts = append(fromAccounts[:0], toList...)
 		toList = toList[:0]
