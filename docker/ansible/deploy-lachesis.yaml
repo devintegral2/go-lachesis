@@ -1,0 +1,83 @@
+---
+- hosts: 127.0.0.1
+  connection: local
+  tasks:
+    - name: Create directory for src
+      file:
+        path: /tmp/lachesis.src
+        state: directory
+        mode: '0755'
+    - name: Get lachesis sources
+      git:
+        repo: https://github.com/Fantom-foundation/go-lachesis.git
+        dest: /tmp/lachesis.src
+        depth: 1
+        version: scope3
+    - name: Build lachesis
+      command:
+        chdir: /tmp/lachesis.src
+        cmd: go build -o /tmp/lachesis ./cmd/lachesis
+    - name: Clean nodes.list file
+      copy:
+        content: ""
+        dest: ./nodes.list
+        force: yes
+        mode: 0644
+
+- hosts: all
+  remote_user: root
+  vars:
+    host_ip: "{{ hostvars[inventory_hostname]['ansible_default_ipv4']['address'] }}"
+  tasks:
+    - name: Create base directory
+      file:
+        path: /opt/lachesis
+        state: directory
+        mode: '0755'
+    - name: Clean data directory
+      file:
+        path: /opt/lachesis/data{{ item }}
+        state: absent
+      with_sequence: start={{ start_node_num }} end={{ last_node_num }}
+    - name: Create data directory
+      file:
+        path: /opt/lachesis/data{{ item }}
+        state: directory
+        mode: '0755'
+      with_sequence: start={{ start_node_num }} end={{ last_node_num }}
+    - name: Create logs directory
+      file:
+        path: /opt/lachesis/logs{{ item }}
+        state: directory
+        mode: '0755'
+      with_sequence: start={{ start_node_num }} end={{ last_node_num }}
+    - name: Copy lachesis bin
+      copy:
+        src: /tmp/lachesis
+        dest: /opt/lachesis/lachesis
+        mode: '0755'
+    - name: Run lachesis node
+      shell:
+        chdir: /opt/lachesis
+        cmd: nohup ./lachesis --datadir=/opt/lachesis/data{{ item }} --fakenet {{ item }}/{{ all_nodes_count }} --port {{ 5050 + item|int }} --rpc --rpcaddr {{ host_ip }} --rpcport {{ 18545 + item|int }} --rpccorsdomain "*" --rpcapi "eth,debug,admin,web3" --nousb --verbosity 5 --nat=extip:{{ host_ip }} </dev/null > /opt/lachesis/logs{{ item }}/lachesis.log 2>&1 &
+      with_sequence: start={{ start_node_num }} end={{ last_node_num }}
+    - name: Save node id to var
+      shell:
+        chdir: /opt/lachesis
+        cmd: ./lachesis --exec 'admin.nodeInfo.enode' attach http://{{host_ip}}:{{ 18545 + item|int }}
+      register: get_node_id
+      with_sequence: start={{ start_node_num }} end={{ last_node_num }}
+    - name: Save nodes.list
+      local_action: lineinfile line="{{ get_node_id['results'][0]['stdout_lines'][0] }}" path=./nodes.list
+    - name: Read from file
+      local_action: command cat ./nodes.list
+      register: nodes_ids
+    - name: Link nodes
+      shell:
+        chdir: /opt/lachesis
+#        cmd: echo "{{ item[0] }}" --- "{{ item[1] }}"
+#      with_items: "{{ nodes_ids['stdout_lines'] }}"
+        cmd: ./lachesis --exec 'admin.addPeer({{ item[0] }})' attach http://{{host_ip}}:{{ 18545 + item[1]|int }}
+      with_nested:
+        - "{{ nodes_ids['stdout_lines'] }}"
+        - "{{ range(start_node_num, last_node_num + 1, 1)|list }}"
