@@ -2,6 +2,8 @@ package integration
 
 import (
 	"crypto/ecdsa"
+	"github.com/Fantom-foundation/go-lachesis/hash"
+	"github.com/Fantom-foundation/go-lachesis/inter"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
@@ -59,6 +61,9 @@ func MakeEngine(dataDir string, gossipCfg *gossip.Config) (*poset.Poset, *app.St
 	// create consensus
 	engine := poset.New(gossipCfg.Net.Dag, cdb, gdb)
 
+	// Check DB integration
+	checkDbIntegration(engine, adb, gdb)
+
 	return engine, adb, gdb
 }
 
@@ -92,4 +97,25 @@ func SetAccountKey(
 	}
 
 	return
+}
+
+func checkDbIntegration(engine *poset.Poset, adb *app.Store, gdb *gossip.Store) {
+	lastEpoch := engine.GetEpoch()
+
+	// get top events
+	topEvents := gdb.GetHeads(lastEpoch)
+
+	topEventsFromList := make([]*inter.Event, 0, len(topEvents))
+	lamport := 0
+
+	// get all events in epoch
+	gdb.ForEachEvent(lastEpoch, func(e *inter.Event)bool{
+		// Save events without parents in list for compare with topEvents
+		if e.Parents == nil || len(e.Parents) == 0 {
+			topEventsFromList = append(topEventsFromList, e)
+		}
+
+		//
+	})
+
 }
