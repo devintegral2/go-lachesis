@@ -2,6 +2,7 @@ package integration
 
 import (
 	"crypto/ecdsa"
+	"strconv"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
@@ -141,6 +142,8 @@ func checkDbIntegration(engine *poset.Poset, adb *app.Store, gdb *gossip.Store) 
 	})
 	topEventsCount = len(topEventsMap)
 
+	log.Info("Check DB integration: epoch events count: "+strconv.FormatInt(int64(len(events)), 10))
+
 	// Compare topEvents set == topEventsFromList
 	if len(topEvents) != topEventsCount {
 		log.Crit("check db integration: root events count from GetHeads not equal root events from ForEachEvent")
@@ -151,7 +154,7 @@ func checkDbIntegration(engine *poset.Poset, adb *app.Store, gdb *gossip.Store) 
 			log.Crit("check db integration: root event from GetHeads absent in events from ForEachEvent")
 		}
 	}
-	log.Info("Check DB integration: top events CORRECT")
+	log.Info("Check DB integration: top events CORRECT ("+strconv.FormatInt(int64(topEventsCount), 10)+")")
 
 	// Check lamports
 	if len(events) > 0 && events[0].Lamport != 1 {
@@ -178,5 +181,5 @@ func checkDbIntegration(engine *poset.Poset, adb *app.Store, gdb *gossip.Store) 
 			}
 		}
 	}
-	log.Info("Check DB integration: events seq CORRECT")
+	log.Info("Check DB integration: events seq CORRECT ("+strconv.FormatInt(int64(len(eventsByNodes)), 10)+")")
 }
