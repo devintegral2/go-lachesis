@@ -151,6 +151,7 @@ func checkDbIntegration(engine *poset.Poset, adb *app.Store, gdb *gossip.Store) 
 			log.Crit("check db integration: root event from GetHeads absent in events from ForEachEvent")
 		}
 	}
+	log.Info("Check DB integration: top events CORRECT")
 
 	// Check lamports
 	if len(events) > 0 && events[0].Lamport != 1 {
@@ -163,6 +164,7 @@ func checkDbIntegration(engine *poset.Poset, adb *app.Store, gdb *gossip.Store) 
 		}
 		lastLamport = e.Lamport
 	}
+	log.Info("Check DB integration: events lamport CORRECT")
 
 	// check seq by nodes
 	for _, l := range eventsByNodes {
@@ -176,4 +178,5 @@ func checkDbIntegration(engine *poset.Poset, adb *app.Store, gdb *gossip.Store) 
 			}
 		}
 	}
+	log.Info("Check DB integration: events seq CORRECT")
 }
