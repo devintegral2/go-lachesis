@@ -101,6 +101,9 @@ func SetAccountKey(
 }
 
 func checkDbIntegration(engine *poset.Poset, adb *app.Store, gdb *gossip.Store) {
+	log.Info("Check DB integration start...")
+	defer 	log.Info("Check DB integration done")
+
 	lastEpoch := engine.GetEpoch()
 
 	// get top events
@@ -150,7 +153,7 @@ func checkDbIntegration(engine *poset.Poset, adb *app.Store, gdb *gossip.Store) 
 	}
 
 	// Check lamports
-	if events[0].Lamport != 1 {
+	if len(events) > 0 && events[0].Lamport != 1 {
 		log.Crit("check db integration: lamport at first event in epoch not equal 1")
 	}
 	lastLamport := idx.Lamport(0)
@@ -163,7 +166,7 @@ func checkDbIntegration(engine *poset.Poset, adb *app.Store, gdb *gossip.Store) 
 
 	// check seq by nodes
 	for _, l := range eventsByNodes {
-		if events[0].Seq != 1 {
+		if len(events) > 0 && events[0].Seq != 1 {
 			log.Crit("check db integration: seq at first event at one creator not equal 1")
 		}
 		lastSeq := idx.Event(0)
