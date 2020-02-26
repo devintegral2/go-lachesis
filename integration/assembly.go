@@ -2,8 +2,6 @@ package integration
 
 import (
 	"crypto/ecdsa"
-	"github.com/Fantom-foundation/go-lachesis/hash"
-	"github.com/Fantom-foundation/go-lachesis/inter"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
@@ -13,6 +11,9 @@ import (
 
 	"github.com/Fantom-foundation/go-lachesis/app"
 	"github.com/Fantom-foundation/go-lachesis/gossip"
+	"github.com/Fantom-foundation/go-lachesis/hash"
+	"github.com/Fantom-foundation/go-lachesis/inter"
+	"github.com/Fantom-foundation/go-lachesis/inter/idx"
 	"github.com/Fantom-foundation/go-lachesis/kvdb/flushable"
 	"github.com/Fantom-foundation/go-lachesis/poset"
 )
@@ -105,17 +106,67 @@ func checkDbIntegration(engine *poset.Poset, adb *app.Store, gdb *gossip.Store) 
 	// get top events
 	topEvents := gdb.GetHeads(lastEpoch)
 
-	topEventsFromList := make([]*inter.Event, 0, len(topEvents))
-	lamport := 0
+	topEventsCount := 0
+	topEventsMap := make(map[hash.Event]*inter.Event)
+	events := make([]*inter.Event, 0, len(topEvents))
+	eventsByNodes := make(map[idx.StakerID][]*inter.Event)
 
 	// get all events in epoch
 	gdb.ForEachEvent(lastEpoch, func(e *inter.Event)bool{
 		// Save events without parents in list for compare with topEvents
-		if e.Parents == nil || len(e.Parents) == 0 {
-			topEventsFromList = append(topEventsFromList, e)
+		if e == nil {
+			return false
 		}
+		events = append(events, e)
+		if _, ok := eventsByNodes[e.Creator]; !ok {
+			eventsByNodes[e.Creator] = make([]*inter.Event, 0, 1)
+		}
+		eventsByNodes[e.Creator] = append(eventsByNodes[e.Creator], e)
 
-		//
+		// detect head (top) events
+		topEventsMap[e.Hash()] = e
+		if e.Parents != nil || len(e.Parents) > 0 {
+			for _, pe := range e.Parents {
+				delete(topEventsMap, pe)
+			}
+		}
+		return true
 	})
+	topEventsCount = len(topEventsMap)
 
+	// Compare topEvents set == topEventsFromList
+	if len(topEvents) != topEventsCount {
+		log.Crit("check db integration: root events count from GetHeads not equal root events from ForEachEvent")
+	}
+	for _, e := range topEvents {
+		_, ok := topEventsMap[e]
+		if !ok {
+			log.Crit("check db integration: root event from GetHeads absent in events from ForEachEvent")
+		}
+	}
+
+	// Check lamports
+	if events[0].Lamport != 1 {
+		log.Crit("check db integration: lamport at first event in epoch not equal 1")
+	}
+	lastLamport := idx.Lamport(0)
+	for _, e := range events {
+		if e.Lamport - lastLamport > 1 {
+			log.Crit("check db integration: lamport between two events great then 1")
+		}
+		lastLamport = e.Lamport
+	}
+
+	// check seq by nodes
+	for _, l := range eventsByNodes {
+		if events[0].Seq != 1 {
+			log.Crit("check db integration: seq at first event at one creator not equal 1")
+		}
+		lastSeq := idx.Event(0)
+		for _, e := range l {
+			if e.Seq - lastSeq > 1 {
+				log.Crit("check db integration: seq between two events with one creator great then 1")
+			}
+		}
+	}
 }
