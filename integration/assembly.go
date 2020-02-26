@@ -107,6 +107,8 @@ func checkDbIntegration(engine *poset.Poset, adb *app.Store, gdb *gossip.Store) 
 
 	lastEpoch := engine.GetEpoch()
 
+	log.Info("Check DB integration: current epoch = "+strconv.FormatInt(int64(lastEpoch), 10))
+
 	// get top events
 	topEvents := gdb.GetHeads(lastEpoch)
 
@@ -142,7 +144,7 @@ func checkDbIntegration(engine *poset.Poset, adb *app.Store, gdb *gossip.Store) 
 	})
 	topEventsCount = len(topEventsMap)
 
-	log.Info("Check DB integration: epoch events count: "+strconv.FormatInt(int64(len(events)), 10))
+	log.Info("Check DB integration: epoch events count = "+strconv.FormatInt(int64(len(events)), 10))
 
 	// Compare topEvents set == topEventsFromList
 	if len(topEvents) != topEventsCount {

@@ -16,11 +16,14 @@ do
     RPCP=$(($RPCP_BASE+$i))
     ACC=$(($i+1))
 
+#    docker volume create lachesis${i}
+
     docker inspect $NAME &>/dev/null || \
     docker run -d --rm \
 	--net=${NETWORK} --name=${NAME} \
 	--cpus=${LIMIT_CPU} --blkio-weight=${LIMIT_IO} \
 	-p ${RPCP}:18545 \
+	--mount source=lachesis${i},target=/root/.lachesis \
 	lachesis:${TAG} \
 	--fakenet=${ACC}/$N,/tmp/test_accs.json \
 	--port=5050 \
