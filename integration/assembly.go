@@ -117,7 +117,11 @@ func checkDbIntegration(engine *poset.Poset, adb *app.Store, gdb *gossip.Store) 
 		if e == nil {
 			return false
 		}
+
+		// collect all events
 		events = append(events, e)
+
+		// collect events by nodes
 		if _, ok := eventsByNodes[e.Creator]; !ok {
 			eventsByNodes[e.Creator] = make([]*inter.Event, 0, 1)
 		}
