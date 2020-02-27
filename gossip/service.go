@@ -3,6 +3,7 @@ package gossip
 import (
 	"fmt"
 	"math/rand"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	notify "github.com/ethereum/go-ethereum/event"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/discv5"
@@ -308,6 +310,8 @@ func (s *Service) Start(srv *p2p.Server) error {
 	s.emitter.SetValidator(s.config.Emitter.Validator)
 	s.emitter.StartEventEmission()
 
+	checkDbIntegration(&s.engine, s.app, s.store)
+
 	return nil
 }
 
@@ -333,4 +337,91 @@ func (s *Service) Stop() error {
 // AccountManager return node's account manager
 func (s *Service) AccountManager() *accounts.Manager {
 	return s.node.AccountManager
+}
+
+// checkDbIntegration check events in DB for correct sequence
+func checkDbIntegration(engine *Consensus, adb *app.Store, gdb *Store) {
+	log.Info("Check DB integration start...")
+	defer 	log.Info("Check DB integration done")
+
+	lastEpoch := (*engine).GetEpoch()
+
+	log.Info("Check DB integration: current epoch = "+strconv.FormatInt(int64(lastEpoch), 10))
+
+	// get top events
+	topEvents := gdb.GetHeads(lastEpoch)
+
+	topEventsCount := 0
+	topEventsMap := make(map[hash.Event]*inter.Event)
+	events := make([]*inter.Event, 0, len(topEvents))
+	eventsByNodes := make(map[idx.StakerID][]*inter.Event)
+
+	// get all events in epoch
+	gdb.ForEachEvent(lastEpoch, func(e *inter.Event)bool{
+		// Save events without parents in list for compare with topEvents
+		if e == nil {
+			return false
+		}
+
+		// collect all events
+		events = append(events, e)
+
+		// collect events by nodes
+		if _, ok := eventsByNodes[e.Creator]; !ok {
+			eventsByNodes[e.Creator] = make([]*inter.Event, 0, 1)
+		}
+		eventsByNodes[e.Creator] = append(eventsByNodes[e.Creator], e)
+
+		// detect head (top) events
+		topEventsMap[e.Hash()] = e
+		if e.Parents != nil || len(e.Parents) > 0 {
+			for _, pe := range e.Parents {
+				delete(topEventsMap, pe)
+			}
+		}
+		return true
+	})
+	topEventsCount = len(topEventsMap)
+
+	log.Info("Check DB integration: epoch events count = "+strconv.FormatInt(int64(len(events)), 10))
+
+	// Compare topEvents set == topEventsFromList
+	if len(topEvents) != topEventsCount {
+		log.Crit("check db integration: root events count from GetHeads not equal root events from ForEachEvent")
+	}
+	for _, e := range topEvents {
+		_, ok := topEventsMap[e]
+		if !ok {
+			log.Crit("check db integration: root event from GetHeads absent in events from ForEachEvent")
+		}
+	}
+	log.Info("Check DB integration: top events CORRECT ("+strconv.FormatInt(int64(topEventsCount), 10)+")")
+
+	// Check lamports
+	if len(events) > 0 && events[0].Lamport != 1 {
+		log.Crit("check db integration: lamport at first event in epoch not equal 1")
+	}
+	lastLamport := idx.Lamport(0)
+	for _, e := range events {
+		if e.Lamport - lastLamport != 1 {
+			log.Crit("check db integration: lamport between two events great then 1")
+		}
+		lastLamport = e.Lamport
+	}
+	log.Info("Check DB integration: events lamport CORRECT")
+
+	// check seq by nodes
+	for _, l := range eventsByNodes {
+		if len(events) > 0 && events[0].Seq != 1 {
+			log.Crit("check db integration: seq at first event at one creator not equal 1")
+		}
+		lastSeq := idx.Event(0)
+		for _, e := range l {
+			if e.Seq - lastSeq != 1 {
+				log.Crit("check db integration: seq between two events with one creator great then 1: "+strconv.FormatInt(int64(e.Seq), 10)+" - "+strconv.FormatInt(int64(lastSeq), 10))
+			}
+			lastSeq = e.Seq
+		}
+	}
+	log.Info("Check DB integration: events seq CORRECT ("+strconv.FormatInt(int64(len(eventsByNodes)), 10)+")")
 }
