@@ -11,8 +11,8 @@ import (
 	"github.com/Fantom-foundation/go-lachesis/kvdb/table"
 )
 
-func checkEvents(p kvdb.DbProducer) {
-	db := p.OpenDb("gossip-main")
+func checkEvents(dbs kvdb.DbProducer) {
+	db := dbs.OpenDb("gossip-main")
 	defer db.Close()
 
 	t := table.New(db, []byte("e"))

@@ -18,10 +18,11 @@ func main() {
 		dir = os.Args[1]
 	}
 
-	p := leveldb.NewProducer(dir)
+	dbs := leveldb.NewProducer(dir)
 
-	//checkPacks(p)
-	//checkEvents(p)
-	checkAfterMigration(p)
+	//checkPacks(dbs)
+	//checkEvents(dbs)
+	//checkAfterMigration(p)
+	checkGasRefunds(dbs)
 
 }
