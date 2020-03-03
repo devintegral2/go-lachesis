@@ -21,6 +21,8 @@ type SyncedPool struct {
 
 	prevFlushTime time.Time
 
+	DebugMode bool
+
 	sync.Mutex
 }
 
@@ -140,6 +142,7 @@ func (p *SyncedPool) flush(id []byte) error {
 
 	// flush data
 	for _, wrapper := range p.wrappers {
+		wrapper.DebugMode = p.DebugMode
 		err := wrapper.Flush()
 		if err != nil {
 			return err

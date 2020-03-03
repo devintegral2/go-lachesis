@@ -327,11 +327,21 @@ func (s *Service) Stop() error {
 	s.engineMu.Lock()
 	defer s.engineMu.Unlock()
 
+	log.Info("========================== Stop service ============================")
+
+	s.store.DebugMode = true
+
 	err := s.app.Commit(nil, true)
 	if err != nil {
 		return err
 	}
-	return s.store.Commit(nil, true)
+
+	err = s.store.Commit(nil, true)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // AccountManager return node's account manager
@@ -387,24 +397,28 @@ func checkDbIntegration(engine *Consensus, adb *app.Store, gdb *Store) {
 
 	// Compare topEvents set == topEventsFromList
 	if len(topEvents) != topEventsCount {
+		debugEventsOutput(events)
 		log.Crit("check db integration: root events count from GetHeads not equal root events from ForEachEvent")
 	}
 	for _, e := range topEvents {
 		_, ok := topEventsMap[e]
 		if !ok {
+			debugEventsOutput(events)
 			log.Crit("check db integration: root event from GetHeads absent in events from ForEachEvent")
 		}
 	}
-	log.Info("Check DB integration: top events CORRECT ("+strconv.FormatInt(int64(topEventsCount), 10)+")")
+	log.Info("Check DB integration: top events CORRECT")
 
 	// Check lamports
 	if len(events) > 0 && events[0].Lamport != 1 {
+		debugEventsOutput(events)
 		log.Crit("check db integration: lamport at first event in epoch not equal 1")
 	}
 	lastLamport := idx.Lamport(0)
 	for _, e := range events {
-		if e.Lamport - lastLamport != 1 {
-			log.Crit("check db integration: lamport between two events great then 1")
+		if e.Lamport >= lastLamport {
+			debugEventsOutput(events)
+			log.Crit("check db integration: lamport between two events wrong (next lower then previous): "+strconv.FormatInt(int64(lastLamport), 10))
 		}
 		lastLamport = e.Lamport
 	}
@@ -413,15 +427,23 @@ func checkDbIntegration(engine *Consensus, adb *app.Store, gdb *Store) {
 	// check seq by nodes
 	for _, l := range eventsByNodes {
 		if len(events) > 0 && events[0].Seq != 1 {
+			debugEventsOutput(events)
 			log.Crit("check db integration: seq at first event at one creator not equal 1")
 		}
 		lastSeq := idx.Event(0)
 		for _, e := range l {
 			if e.Seq - lastSeq != 1 {
+				debugEventsOutput(events)
 				log.Crit("check db integration: seq between two events with one creator great then 1: "+strconv.FormatInt(int64(e.Seq), 10)+" - "+strconv.FormatInt(int64(lastSeq), 10))
 			}
 			lastSeq = e.Seq
 		}
 	}
-	log.Info("Check DB integration: events seq CORRECT ("+strconv.FormatInt(int64(len(eventsByNodes)), 10)+")")
+	log.Info("Check DB integration: events seq CORRECT")
+}
+
+func debugEventsOutput(events []*inter.Event) {
+	for _, e := range events {
+		log.Info("DBG events: "+e.Hash().Hex()+" lamport = "+strconv.FormatInt(int64(e.Lamport), 10)+" seq = "+strconv.FormatInt(int64(e.Creator), 16)+"/"+strconv.FormatInt(int64(e.Seq), 10))
+	}
 }

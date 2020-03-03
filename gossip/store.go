@@ -72,6 +72,8 @@ type Store struct {
 		Inc sync.Mutex
 	}
 
+	DebugMode	bool
+
 	logger.Instance
 }
 
@@ -158,6 +160,7 @@ func (s *Store) Commit(flushID []byte, immediately bool) error {
 	}
 
 	// Flush the DBs
+	s.dbs.DebugMode = s.DebugMode
 	return s.dbs.Flush(flushID)
 }
 

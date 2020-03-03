@@ -2,7 +2,9 @@ package flushable
 
 import (
 	"bytes"
+	"encoding/hex"
 	"errors"
+	"github.com/ethereum/go-ethereum/log"
 	"sync"
 
 	rbt "github.com/emirpasic/gods/trees/redblacktree"
@@ -25,6 +27,8 @@ type Flushable struct {
 
 	modified       *rbt.Tree // modified, comparing to parent, pairs. deleted values are nil
 	sizeEstimation *int
+
+	DebugMode bool
 
 	lock *sync.Mutex // we have no guarantees that rbt.Tree works with concurrent reads, so we can't use MutexRW
 }
@@ -196,8 +200,14 @@ func (w *Flushable) flush() error {
 		var err error
 
 		if it.Value() == nil {
+			if w.DebugMode {
+				log.Info("DBG flush to batch: delete = " + hex.EncodeToString([]byte(it.Key().(string))))
+			}
 			err = batch.Delete([]byte(it.Key().(string)))
 		} else {
+			if w.DebugMode {
+				log.Info("DBG flush to batch: put = " + hex.EncodeToString([]byte(it.Key().(string))))
+			}
 			err = batch.Put([]byte(it.Key().(string)), it.Value().([]byte))
 		}
 
@@ -443,6 +453,8 @@ type cacheBatch struct {
 	db     *Flushable
 	writes []kv
 	size   int
+
+	DebugMode bool
 }
 
 // Put adds "add key-value pair" operation into batch.
@@ -463,12 +475,15 @@ func (b *cacheBatch) Delete(key []byte) error {
 func (b *cacheBatch) Write() error {
 	b.db.lock.Lock()
 	defer b.db.lock.Unlock()
+
 	for _, kv := range b.writes {
 		var err error
 
 		if kv.v == nil {
+			// log.Info("DBG batch write: delete = "+hex.EncodeToString(kv.k))
 			err = b.db.delete(kv.k)
 		} else {
+			// log.Info("DBG batch write: put = "+hex.EncodeToString(kv.k))
 			err = b.db.put(kv.k, kv.v)
 		}
 
@@ -476,6 +491,7 @@ func (b *cacheBatch) Write() error {
 			return err
 		}
 	}
+
 	return nil
 }
 

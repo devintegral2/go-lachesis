@@ -6,6 +6,8 @@ package gossip
 
 import (
 	"bytes"
+	"github.com/ethereum/go-ethereum/log"
+	"strconv"
 
 	"github.com/ethereum/go-ethereum/rlp"
 
@@ -35,6 +37,8 @@ func (s *Store) DeleteEvent(epoch idx.Epoch, id hash.Event) {
 // SetEvent stores event.
 func (s *Store) SetEvent(e *inter.Event) {
 	key := e.Hash().Bytes()
+
+	log.Info("SetEvent: "+e.Hash().Hex()+" lamport = "+strconv.FormatInt(int64(e.Lamport), 10)+" seq = "+strconv.FormatInt(int64(e.Creator), 16)+"/"+strconv.FormatInt(int64(e.Seq), 10))
 
 	s.set(s.table.Events, key, e)
 	s.SetEventHeader(e.Epoch, e.Hash(), &e.EventHeaderData)

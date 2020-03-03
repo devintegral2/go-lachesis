@@ -142,6 +142,7 @@ func (db *Database) Close() error {
 		}
 		db.onClose = nil
 	}
+
 	if err := ldb.Close(); err != nil {
 		return err
 	}
