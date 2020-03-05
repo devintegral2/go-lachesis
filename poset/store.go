@@ -69,7 +69,7 @@ func (s *Store) initCache() {
 // Store is always blank.
 func NewMemStore() *Store {
 	mems := memorydb.NewProducer("")
-	dbs := flushable.NewSyncedPool(mems)
+	dbs, _ := flushable.NewSyncedPool(mems)
 	cfg := LiteStoreConfig()
 
 	return NewStore(dbs, cfg)

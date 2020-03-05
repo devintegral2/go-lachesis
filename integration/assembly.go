@@ -17,7 +17,10 @@ import (
 
 // MakeEngine makes consensus engine from config.
 func MakeEngine(dataDir string, gossipCfg *gossip.Config) (*poset.Poset, *app.Store, *gossip.Store) {
-	dbs := flushable.NewSyncedPool(dbProducer(dataDir))
+	dbs, err := flushable.NewSyncedPool(dbProducer(dataDir))
+	if err != nil {
+		utils.Fatalf("Fail to open DB: %v", err)
+	}
 
 	appStoreConfig := app.StoreConfig{
 		ReceiptsCacheSize:   gossipCfg.ReceiptsCacheSize,

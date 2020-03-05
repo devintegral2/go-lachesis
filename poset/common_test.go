@@ -52,7 +52,7 @@ func FakePoset(namespace string, nodes []idx.StakerID, mods ...memorydb.Mod) (*E
 	}
 
 	mems := memorydb.NewProducer(namespace, mods...)
-	dbs := flushable.NewSyncedPool(mems)
+	dbs, _ := flushable.NewSyncedPool(mems)
 	store := NewStore(dbs, LiteStoreConfig())
 
 	atropos := hash.ZeroEvent

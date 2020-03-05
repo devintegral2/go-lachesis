@@ -11,7 +11,7 @@ import (
 
 func cachedStore() *Store {
 	mems := memorydb.NewProducer("", withDelay)
-	dbs := flushable.NewSyncedPool(mems)
+	dbs, _ := flushable.NewSyncedPool(mems)
 	cfg := LiteStoreConfig()
 
 	return NewStore(dbs, cfg)
@@ -19,7 +19,7 @@ func cachedStore() *Store {
 
 func nonCachedStore() *Store {
 	mems := memorydb.NewProducer("", withDelay)
-	dbs := flushable.NewSyncedPool(mems)
+	dbs, _ := flushable.NewSyncedPool(mems)
 	cfg := StoreConfig{}
 
 	return NewStore(dbs, cfg)
@@ -27,7 +27,10 @@ func nonCachedStore() *Store {
 
 func realStore(dir string) *Store {
 	disk := leveldb.NewProducer(dir)
-	dbs := flushable.NewSyncedPool(disk)
+	dbs, err := flushable.NewSyncedPool(disk)
+	if err != nil {
+		panic(err)
+	}
 	cfg := LiteStoreConfig()
 
 	return NewStore(dbs, cfg)

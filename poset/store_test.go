@@ -42,7 +42,10 @@ func benchmarkStore(b *testing.B) {
 	}()
 
 	lvl := leveldb.NewProducer(dir)
-	dbs := flushable.NewSyncedPool(lvl)
+	dbs, err := flushable.NewSyncedPool(lvl)
+	if err != nil {
+		panic(err)
+	}
 
 	input := NewEventStore(dbs.GetDb("input"), 1000)
 	defer input.Close()

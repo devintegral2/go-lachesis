@@ -24,7 +24,7 @@ type SyncedPool struct {
 	sync.Mutex
 }
 
-func NewSyncedPool(producer kvdb.DbProducer) *SyncedPool {
+func NewSyncedPool(producer kvdb.DbProducer) (*SyncedPool, error) {
 	if producer == nil {
 		panic("nil producer")
 	}
@@ -41,10 +41,11 @@ func NewSyncedPool(producer kvdb.DbProducer) *SyncedPool {
 	}
 
 	if err := p.checkDbsSynced(); err != nil {
-		log.Crit("Databases are corrupted, which is possible after a crash or disk failure.", "err", err)
+		log.Error("Databases are corrupted, which is possible after a crash or disk failure.", "err", err)
+		return nil, err
 	}
 
-	return p
+	return p, nil
 }
 
 func (p *SyncedPool) callbacks(name string) (
