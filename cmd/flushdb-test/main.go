@@ -6,11 +6,12 @@ import (
 	"fmt"
 	"math/rand"
 	"os"
+	"sort"
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/Fantom-foundation/go-lachesis/common/bigendian"
+	"github.com/Fantom-foundation/go-lachesis/common/littleendian"
 	"github.com/Fantom-foundation/go-lachesis/kvdb/flushable"
 	"github.com/Fantom-foundation/go-lachesis/kvdb/leveldb"
 	"github.com/Fantom-foundation/go-lachesis/kvdb/table"
@@ -97,33 +98,38 @@ func checkConsistency(pool *flushable.SyncedPool) (last uint64, err error) {
 	db := pool.GetDb(dbName)
 	t := table.New(db, []byte(tableName))
 
+	keys := make([]uint64, 0, 1e5)
+
+	// keys read
 	it := t.NewIterator()
 	defer it.Release()
-
-	var prev uint64
-	last = prev
-
 	for it.Next() {
-		last = bigendian.BytesToInt64(it.Key())
+		k := littleendian.BytesToInt64(it.Key())
+		keys = append(keys, k)
+		exp := key2val(it.Key())
+		if !bytes.Equal(exp, it.Value()) {
+			err = fmt.Errorf("val inconsistency: %d", k)
+			return
+		}
+	}
+	err = it.Error()
+	if err != nil {
+		panic(err)
+	}
+
+	// keys check
+	prev := uint64(0)
+	last = prev
+	sort.Slice(keys, func(i, j int) bool {
+		return keys[i] < keys[j]
+	})
+	for _, last = range keys {
 		if last != prev+1 {
 			err = fmt.Errorf("key inconsistency: %d --> %d",
 				prev, last)
 			return
 		}
-
-		exp := key2val(it.Key())
-		if !bytes.Equal(exp, it.Value()) {
-			err = fmt.Errorf("val inconsistency: %d --> %d",
-				prev, last)
-			return
-		}
-
 		prev = last
-	}
-
-	err = it.Error()
-	if err != nil {
-		panic(err)
 	}
 
 	return
@@ -137,7 +143,7 @@ func writeData(pool *flushable.SyncedPool, start uint64, count int, notify chan<
 	last = start
 	for ; count > 0; count-- {
 		last++
-		key := bigendian.Int64ToBytes(last)
+		key := littleendian.Int64ToBytes(last)
 		val := key2val(key)
 
 		err = t.Put(key, val)
@@ -147,7 +153,7 @@ func writeData(pool *flushable.SyncedPool, start uint64, count int, notify chan<
 	}
 
 	notify <- struct{}{}
-	err = pool.Flush(bigendian.Int64ToBytes(start))
+	err = pool.Flush(littleendian.Int64ToBytes(start))
 	if err != nil {
 		panic(err)
 	}
