@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/hex"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -126,12 +127,20 @@ func checkGasRefunds(dbs kvdb.DbProducer) {
 				totalStake: 0xdb94fe4e35},
 		}
 	*/
-	return
+	// return
 
 	//getEvent(db, "377:1:e53be8")
 	//return
 
-	const epoch idx.Epoch = 376
+	var epoch idx.Epoch = 1
+
+	if len(os.Args) >= 3 {
+		x, err := strconv.ParseUint(os.Args[2], 10, 32)
+		if err != nil {
+			panic(err)
+		}
+		epoch = idx.Epoch(x)
+	}
 
 	tGasPowerRefund := table.New(db, []byte("R"))
 	it := tGasPowerRefund.NewIteratorWithPrefix(epoch.Bytes())
