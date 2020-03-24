@@ -2,21 +2,19 @@ package gossip
 
 import (
 	"bytes"
+	"fmt"
 	"sync"
 	"time"
 
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/hashicorp/golang-lru"
 
 	"github.com/Fantom-foundation/go-lachesis/common/bigendian"
+	"github.com/Fantom-foundation/go-lachesis/gossip/temporary"
 	"github.com/Fantom-foundation/go-lachesis/kvdb"
 	"github.com/Fantom-foundation/go-lachesis/kvdb/flushable"
 	"github.com/Fantom-foundation/go-lachesis/kvdb/memorydb"
-	"github.com/Fantom-foundation/go-lachesis/kvdb/nokeyiserr"
 	"github.com/Fantom-foundation/go-lachesis/kvdb/table"
 	"github.com/Fantom-foundation/go-lachesis/logger"
 )
@@ -28,49 +26,46 @@ type Store struct {
 
 	mainDb kvdb.KeyValueStore
 	table  struct {
-		Peers            kvdb.KeyValueStore `table:"peer"`
-		Events           kvdb.KeyValueStore `table:"event"`
-		Blocks           kvdb.KeyValueStore `table:"block"`
-		PackInfos        kvdb.KeyValueStore `table:"packinfo"`
-		Packs            kvdb.KeyValueStore `table:"pack"`
-		PacksNum         kvdb.KeyValueStore `table:"packsnum"`
-		LastEpochHeaders kvdb.KeyValueStore `table:"lheaders"`
-		EpochStats       kvdb.KeyValueStore `table:"estats"`
+		// Network tables
+		Peers kvdb.KeyValueStore `table:"Z"`
+
+		// Main DAG tables
+		Events    kvdb.KeyValueStore `table:"e"`
+		Blocks    kvdb.KeyValueStore `table:"b"`
+		PackInfos kvdb.KeyValueStore `table:"p"`
+		Packs     kvdb.KeyValueStore `table:"P"`
+		PacksNum  kvdb.KeyValueStore `table:"n"`
+
+		// general economy tables
+		EpochStats kvdb.KeyValueStore `table:"E"`
+
+		// gas power economy tables
+		LastEpochHeaders kvdb.KeyValueStore `table:"l"`
 
 		// API-only tables
-		BlockHashes kvdb.KeyValueStore `table:"blockh"`
-		Receipts    kvdb.KeyValueStore `table:"receipts"`
-		TxPositions kvdb.KeyValueStore `table:"txp"`
+		BlockHashes     kvdb.KeyValueStore `table:"h"`
+		TxPositions     kvdb.KeyValueStore `table:"x"`
+		DecisiveEvents  kvdb.KeyValueStore `table:"9"`
+		EventLocalTimes kvdb.KeyValueStore `table:"!"`
 
-		// SFC-related tables
-		Validators kvdb.KeyValueStore `table:"va"`
-		Stakers    kvdb.KeyValueStore `table:"vs"`
-		Delegators kvdb.KeyValueStore `table:"de"`
-
-		TmpDbs kvdb.KeyValueStore `table:"tmpdbs"`
-
-		Evm      ethdb.Database
-		EvmState state.Database
+		TmpDbs kvdb.KeyValueStore `table:"T"`
 	}
+
+	EpochDbs *temporary.Dbs
 
 	cache struct {
-		Events           *lru.Cache `cache:"-"` // store by pointer
-		EventsHeaders    *lru.Cache `cache:"-"` // store by pointer
-		Blocks           *lru.Cache `cache:"-"` // store by pointer
-		PackInfos        *lru.Cache `cache:"-"` // store by value
-		Receipts         *lru.Cache `cache:"-"` // store by value
-		TxPositions      *lru.Cache `cache:"-"` // store by pointer
-		EpochStats       *lru.Cache `cache:"-"` // store by value
-		LastEpochHeaders *lru.Cache `cache:"-"` // store by pointer
-		Stakers          *lru.Cache `cache:"-"` // store by pointer
-		Delegators       *lru.Cache `cache:"-"` // store by pointer
+		Events        *lru.Cache `cache:"-"` // store by pointer
+		EventsHeaders *lru.Cache `cache:"-"` // store by pointer
+		Blocks        *lru.Cache `cache:"-"` // store by pointer
+		PackInfos     *lru.Cache `cache:"-"` // store by value
+		EpochStats    *lru.Cache `cache:"-"` // store by value
+		TxPositions   *lru.Cache `cache:"-"` // store by pointer
+		BlockHashes   *lru.Cache `cache:"-"` // store by pointer
 	}
 
-	mutexes struct {
-		LastEpochHeaders *sync.RWMutex
+	mutex struct {
+		Inc sync.Mutex
 	}
-
-	tmpDbs
 
 	logger.Instance
 }
@@ -95,15 +90,29 @@ func NewStore(dbs *flushable.SyncedPool, cfg StoreConfig) *Store {
 
 	table.MigrateTables(&s.table, s.mainDb)
 
-	evmTable := nokeyiserr.Wrap(table.New(s.mainDb, []byte("evm_"))) // ETH expects that "not found" is an error
-	s.table.Evm = rawdb.NewDatabase(evmTable)
-	s.table.EvmState = state.NewDatabaseWithCache(s.table.Evm, 16)
+	s.EpochDbs = s.newTmpDbs("epoch", func(ver uint64) (
+		db kvdb.KeyValueStore,
+		tables interface{},
+	) {
+		db = s.dbs.GetDb(fmt.Sprintf("gossip-epoch-%d", ver))
+		tables = newEpochStore(db)
+		return
+	})
 
-	s.initTmpDbs()
 	s.initCache()
-	s.initMutexes()
+
+	// for compability with db before commit 591ede6
+	s.rmPrefix(s.table.PackInfos, "serverPool")
 
 	return s
+}
+
+func (s *Store) newTmpDbs(name string, maker temporary.DbMaker) *temporary.Dbs {
+	t := table.New(s.table.TmpDbs, []byte(name))
+	dbs := temporary.NewDbs(t, maker)
+	dbs.SetName(name)
+
+	return dbs
 }
 
 func (s *Store) initCache() {
@@ -111,16 +120,9 @@ func (s *Store) initCache() {
 	s.cache.EventsHeaders = s.makeCache(s.cfg.EventsHeadersCacheSize)
 	s.cache.Blocks = s.makeCache(s.cfg.BlockCacheSize)
 	s.cache.PackInfos = s.makeCache(s.cfg.PackInfosCacheSize)
-	s.cache.Receipts = s.makeCache(s.cfg.ReceiptsCacheSize)
-	s.cache.TxPositions = s.makeCache(s.cfg.TxPositionsCacheSize)
 	s.cache.EpochStats = s.makeCache(s.cfg.EpochStatsCacheSize)
-	s.cache.LastEpochHeaders = s.makeCache(s.cfg.LastEpochHeadersCacheSize)
-	s.cache.Stakers = s.makeCache(s.cfg.StakersCacheSize)
-	s.cache.Delegators = s.makeCache(s.cfg.DelegatorsCacheSize)
-}
-
-func (s *Store) initMutexes() {
-	s.mutexes.LastEpochHeaders = new(sync.RWMutex)
+	s.cache.TxPositions = s.makeCache(s.cfg.TxPositionsCacheSize)
+	s.cache.BlockHashes = s.makeCache(s.cfg.BlockCacheSize)
 }
 
 // Close leaves underlying database.
@@ -145,26 +147,12 @@ func (s *Store) Commit(flushID []byte, immediately bool) error {
 		flushID = buf.Bytes()
 	}
 
-	if immediately || s.dbs.IsFlushNeeded() {
-		// Flush trie on the DB
-		err := s.table.EvmState.TrieDB().Cap(0)
-		if err != nil {
-			s.Log.Error("Failed to flush trie DB into main DB", "err", err)
-		}
-		// Flush the DBs
-		return s.dbs.Flush(flushID)
+	if !immediately && !s.dbs.IsFlushNeeded() {
+		return nil
 	}
 
-	return nil
-}
-
-// StateDB returns state database.
-func (s *Store) StateDB(from common.Hash) *state.StateDB {
-	db, err := state.New(common.Hash(from), s.table.EvmState)
-	if err != nil {
-		s.Log.Crit("Failed to open state", "err", err)
-	}
-	return db
+	// Flush the DBs
+	return s.dbs.Flush(flushID)
 }
 
 /*
@@ -195,7 +183,7 @@ func (s *Store) get(table kvdb.KeyValueStore, key []byte, to interface{}) interf
 
 	err = rlp.DecodeBytes(buf, to)
 	if err != nil {
-		s.Log.Crit("Failed to decode rlp", "err", err)
+		s.Log.Crit("Failed to decode rlp", "err", err, "size", len(buf))
 	}
 	return to
 }
@@ -206,6 +194,28 @@ func (s *Store) has(table kvdb.KeyValueStore, key []byte) bool {
 		s.Log.Crit("Failed to get key", "err", err)
 	}
 	return res
+}
+
+func (s *Store) rmPrefix(t kvdb.KeyValueStore, prefix string) {
+	it := t.NewIteratorWithPrefix([]byte(prefix))
+	defer it.Release()
+
+	s.dropTable(it, t)
+}
+
+func (s *Store) dropTable(it ethdb.Iterator, t kvdb.KeyValueStore) {
+	keys := make([][]byte, 0, 500) // don't write during iteration
+
+	for it.Next() {
+		keys = append(keys, it.Key())
+	}
+
+	for i := range keys {
+		err := t.Delete(keys[i])
+		if err != nil {
+			s.Log.Crit("Failed to erase key-value", "err", err)
+		}
+	}
 }
 
 func (s *Store) makeCache(size int) *lru.Cache {

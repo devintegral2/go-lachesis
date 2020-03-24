@@ -16,6 +16,7 @@ import (
 	"github.com/Fantom-foundation/go-lachesis/crypto"
 	"github.com/Fantom-foundation/go-lachesis/integration"
 	"github.com/Fantom-foundation/go-lachesis/lachesis/genesis"
+	"github.com/Fantom-foundation/go-lachesis/utils"
 )
 
 // FakeNetFlag enables special testnet, where validators are automatically created
@@ -29,15 +30,23 @@ func addFakeAccount(ctx *cli.Context, stack *node.Node) {
 		return
 	}
 
-	key := getFakeCoinbase(ctx)
+	key := getFakeValidator(ctx)
+	if key == nil {
+		return
+	}
+
 	coinbase := integration.SetAccountKey(stack.AccountManager(), key, "fakepassword")
-	log.Info("Unlocked fake coinbase", "address", coinbase.Address.Hex())
+	log.Info("Unlocked fake validator", "address", coinbase.Address.Hex())
 }
 
-func getFakeCoinbase(ctx *cli.Context) *ecdsa.PrivateKey {
+func getFakeValidator(ctx *cli.Context) *ecdsa.PrivateKey {
 	num, _, err := parseFakeGen(ctx.GlobalString(FakeNetFlag.Name))
 	if err != nil {
 		log.Crit("Invalid flag", "flag", FakeNetFlag.Name, "err", err)
+	}
+
+	if num == 0 {
+		return nil
 	}
 
 	return crypto.FakeKey(num)
@@ -56,18 +65,19 @@ func parseFakeGen(s string) (num int, vaccs genesis.VAccounts, err error) {
 	if err != nil {
 		return
 	}
-	num = int(i64) - 1
+	num = int(i64)
 
 	parts = strings.SplitN(parts[1], ",", 2)
 
 	i64, err = strconv.ParseUint(parts[0], 10, 32)
 	validatorsNum := int(i64)
 
-	if validatorsNum < 1 || num >= validatorsNum {
-		err = fmt.Errorf("key-num should be in range from 1 to validators : <key-num>/<validators>")
+	if validatorsNum < 0 || num > validatorsNum {
+		err = fmt.Errorf("key-num should be in range from 1 to validators (<key-num>/<validators>), or should be zero for non-validator node")
+		return
 	}
 
-	vaccs = genesis.FakeAccounts(0, validatorsNum, big.NewInt(1e18), 1e6)
+	vaccs = genesis.FakeValidators(validatorsNum, utils.ToFtm(1e10), utils.ToFtm(3175000))
 
 	if len(parts) < 2 {
 		return
@@ -77,13 +87,9 @@ func parseFakeGen(s string) (num int, vaccs genesis.VAccounts, err error) {
 	if err != nil {
 		others, err = readAccounts(parts[1])
 	} else {
-		others, err = genesis.FakeAccounts(validatorsNum, int(i64), big.NewInt(1e18), 0).Accounts, nil
+		others = genAccounts(validatorsNum, int(i64), big.NewInt(1e18), big.NewInt(0))
 	}
 	vaccs.Accounts.Add(others)
-
-	if err != nil {
-		return
-	}
 
 	return
 }
@@ -98,4 +104,19 @@ func readAccounts(filename string) (accs genesis.Accounts, err error) {
 	accs = genesis.Accounts{}
 	err = json.NewDecoder(f).Decode(&accs)
 	return
+}
+
+func genAccounts(offset, count int, balance *big.Int, stake *big.Int) genesis.Accounts {
+	accs := make(genesis.Accounts, count)
+
+	for i := offset; i < offset+count; i++ {
+		key := crypto.FakeKey(i)
+		addr := crypto.PubkeyToAddress(key.PublicKey)
+		accs[addr] = genesis.Account{
+			Balance:    balance,
+			PrivateKey: key,
+		}
+	}
+
+	return accs
 }

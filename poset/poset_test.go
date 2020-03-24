@@ -7,6 +7,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/Fantom-foundation/go-lachesis/hash"
 	"github.com/Fantom-foundation/go-lachesis/inter"
 	"github.com/Fantom-foundation/go-lachesis/inter/idx"
 	"github.com/Fantom-foundation/go-lachesis/logger"
@@ -25,15 +26,15 @@ func TestPoset(t *testing.T) {
 	for i := 0; i < posetCount; i++ {
 		poset, store, input := FakePoset("", nodes)
 		n := i % len(nodes)
-		poset.SetName(nodes[n].String())
-		store.SetName(nodes[n].String())
+		poset.SetName(hash.GetNodeName(nodes[n]))
+		store.SetName(hash.GetNodeName(nodes[n]))
 		posets = append(posets, poset)
 		inputs = append(inputs, input)
 	}
 
 	// create events on poset0
 	var ordered inter.Events
-	inter.ForEachRandEvent(nodes, int(posets[0].dag.EpochLen)-1, 3, nil, inter.ForEachEvent{
+	inter.ForEachRandEvent(nodes, int(posets[0].dag.MaxEpochBlocks)-1, 3, nil, inter.ForEachEvent{
 		Process: func(e *inter.Event, name string) {
 			ordered = append(ordered, e)
 

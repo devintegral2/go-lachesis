@@ -9,35 +9,40 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/enode"
 
+	"github.com/Fantom-foundation/go-lachesis/app"
 	"github.com/Fantom-foundation/go-lachesis/hash"
 	"github.com/Fantom-foundation/go-lachesis/inter"
+	"github.com/Fantom-foundation/go-lachesis/inter/pos"
 	"github.com/Fantom-foundation/go-lachesis/lachesis"
 	"github.com/Fantom-foundation/go-lachesis/lachesis/genesis"
 	"github.com/Fantom-foundation/go-lachesis/poset"
 )
 
-var (
-	testBankKey, _ = crypto.HexToECDSA("b71c71a67e1177ad4e901695e1b4b9ee17ae16c6668d313eac2f96dbcda3f291")
-	testBank       = crypto.PubkeyToAddress(testBankKey.PublicKey)
-)
-
 // newTestProtocolManager creates a new protocol manager for testing purposes,
 // with the given number of events already known from each node
 func newTestProtocolManager(nodesNum int, eventsNum int, newtx chan<- []*types.Transaction, onNewEvent func(e *inter.Event)) (*ProtocolManager, *Store, error) {
-	var (
-		store = NewMemStore()
-	)
+	net := lachesis.FakeNetConfig(genesis.FakeValidators(nodesNum, big.NewInt(0), pos.StakeToBalance(1)))
 
-	net := lachesis.FakeNetConfig(genesis.FakeAccounts(0, nodesNum, big.NewInt(0), 1))
 	config := DefaultConfig(net)
 	config.TxPool.Journal = ""
 
 	engineStore := poset.NewMemStore()
 	err := engineStore.ApplyGenesis(&net.Genesis, hash.Event{}, common.Hash{})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	app := app.NewMemStore()
+	state, _, err := app.ApplyGenesis(&net, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	store := NewMemStore()
+	_, _, _, err = store.ApplyGenesis(&net, state)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -50,6 +55,7 @@ func newTestProtocolManager(nodesNum int, eventsNum int, newtx chan<- []*types.T
 		nil,
 		&dummyTxPool{added: newtx},
 		new(sync.RWMutex),
+		mockCheckers(1, &net, engine, store, app),
 		store,
 		engine,
 		nil,
@@ -58,7 +64,7 @@ func newTestProtocolManager(nodesNum int, eventsNum int, newtx chan<- []*types.T
 		return nil, nil, err
 	}
 
-	inter.ForEachRandEvent(net.Genesis.Alloc.Addresses(), eventsNum, 3, nil, inter.ForEachEvent{
+	inter.ForEachRandEvent(net.Genesis.Alloc.Validators.Validators().IDs(), eventsNum, 3, nil, inter.ForEachEvent{
 		Process: func(e *inter.Event, name string) {
 			store.SetEvent(e)
 			err = engine.ProcessEvent(e)

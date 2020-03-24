@@ -8,6 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 
+	"github.com/Fantom-foundation/go-lachesis/app"
 	"github.com/Fantom-foundation/go-lachesis/evmcore"
 	"github.com/Fantom-foundation/go-lachesis/hash"
 	"github.com/Fantom-foundation/go-lachesis/inter/idx"
@@ -19,6 +20,7 @@ type EvmStateReader struct {
 	engine   Consensus
 
 	store *Store
+	app   *app.Store
 }
 
 func (s *Service) GetEvmStateReader() *EvmStateReader {
@@ -27,22 +29,23 @@ func (s *Service) GetEvmStateReader() *EvmStateReader {
 		engineMu:    s.engineMu,
 		engine:      s.engine,
 		store:       s.store,
+		app:         s.app,
 	}
 }
 
 func (r *EvmStateReader) CurrentBlock() *evmcore.EvmBlock {
 	r.engineMu.RLock()
-	defer r.engineMu.RUnlock()
-
 	n, h := r.engine.LastBlock()
+	r.engineMu.RUnlock()
+
 	return r.getBlock(hash.Event(h), idx.Block(n), n != 0)
 }
 
 func (r *EvmStateReader) CurrentHeader() *evmcore.EvmHeader {
 	r.engineMu.RLock()
-	defer r.engineMu.RUnlock()
-
 	n, h := r.engine.LastBlock()
+	r.engineMu.RUnlock()
+
 	return r.getBlock(hash.Event(h), idx.Block(n), false).Header()
 }
 
@@ -55,16 +58,10 @@ func (r *EvmStateReader) GetBlock(h common.Hash, n uint64) *evmcore.EvmBlock {
 }
 
 func (r *EvmStateReader) GetDagHeader(h hash.Event, n idx.Block) *evmcore.EvmHeader {
-	r.engineMu.RLock()
-	defer r.engineMu.RUnlock()
-
 	return r.getBlock(h, n, false).Header()
 }
 
 func (r *EvmStateReader) GetDagBlock(h hash.Event, n idx.Block) *evmcore.EvmBlock {
-	r.engineMu.RLock()
-	defer r.engineMu.RUnlock()
-
 	return r.getBlock(h, n, n != 0)
 }
 
@@ -73,7 +70,7 @@ func (r *EvmStateReader) getBlock(h hash.Event, n idx.Block, readTxs bool) *evmc
 	if block == nil {
 		return nil
 	}
-	if (h != hash.Event{}) && (h != block.Hash()) {
+	if (h != hash.Event{}) && (h != block.Atropos) {
 		return nil
 	}
 
@@ -115,5 +112,5 @@ func (r *EvmStateReader) getBlock(h hash.Event, n idx.Block, readTxs bool) *evmc
 }
 
 func (r *EvmStateReader) StateAt(root common.Hash) (*state.StateDB, error) {
-	return r.store.StateDB(root), nil
+	return r.app.StateDB(root), nil
 }

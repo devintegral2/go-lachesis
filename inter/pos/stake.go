@@ -3,9 +3,10 @@ package pos
 import (
 	"math/big"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+
+	"github.com/Fantom-foundation/go-lachesis/inter/idx"
 )
 
 type (
@@ -20,7 +21,7 @@ type (
 	// StakeCounter counts stakes.
 	StakeCounter struct {
 		validators Validators
-		already    map[common.Address]struct{}
+		already    []bool // idx.Validator -> bool
 
 		quorum Stake
 		sum    Stake
@@ -28,7 +29,7 @@ type (
 )
 
 var (
-	balanceToStakeRatio = big.NewInt(params.Ether / 1e6)
+	balanceToStakeRatio = big.NewInt(params.Ether / 1e3)
 )
 
 // BalanceToStake balance to validator's stake
@@ -56,19 +57,25 @@ func newStakeCounter(vv Validators) *StakeCounter {
 	return &StakeCounter{
 		validators: vv,
 		quorum:     vv.Quorum(),
-		already:    make(map[common.Address]struct{}),
+		already:    make([]bool, vv.Len()),
 		sum:        0,
 	}
 }
 
 // Count validator and return true if it hadn't counted before.
-func (s *StakeCounter) Count(addr common.Address) bool {
-	if _, ok := s.already[addr]; ok {
+func (s *StakeCounter) Count(v idx.StakerID) bool {
+	stakerIdx := s.validators.GetIdx(v)
+	return s.CountByIdx(stakerIdx)
+}
+
+// CountByIdx validator and return true if it hadn't counted before.
+func (s *StakeCounter) CountByIdx(stakerIdx idx.Validator) bool {
+	if s.already[stakerIdx] {
 		return false
 	}
-	s.already[addr] = struct{}{}
+	s.already[stakerIdx] = true
 
-	s.sum += s.validators.StakeOf(addr)
+	s.sum += s.validators.GetStakeByIdx(stakerIdx)
 	return true
 }
 

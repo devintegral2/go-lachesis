@@ -44,10 +44,11 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/tyler-smith/go-bip39"
 
-	"github.com/Fantom-foundation/go-lachesis/eventcheck/basiccheck"
 	"github.com/Fantom-foundation/go-lachesis/evmcore"
 	"github.com/Fantom-foundation/go-lachesis/hash"
 	"github.com/Fantom-foundation/go-lachesis/inter"
+	"github.com/Fantom-foundation/go-lachesis/inter/idx"
+	lachesisparams "github.com/Fantom-foundation/go-lachesis/lachesis/params"
 )
 
 const (
@@ -82,7 +83,23 @@ func (s *PublicEthereumAPI) ProtocolVersion() hexutil.Uint {
 
 // Syncing returns true if node is syncing
 func (s *PublicEthereumAPI) Syncing() (interface{}, error) {
-	return false, nil
+	progress := s.b.Progress()
+	// Return not syncing if the synchronisation already completed
+	if time.Since(progress.CurrentBlockTime.Time()) <= 90*time.Minute { // should be >> MaxEmitInterval
+		return false, nil
+	}
+	// Otherwise gather the block sync stats
+	return map[string]interface{}{
+		"startingBlock":    hexutil.Uint64(0), // back-compatibility
+		"currentEpoch":     hexutil.Uint64(progress.CurrentEpoch),
+		"currentBlock":     hexutil.Uint64(progress.CurrentBlock),
+		"currentBlockHash": progress.CurrentBlockHash.Hex(),
+		"currentBlockTime": hexutil.Uint64(progress.CurrentBlockTime),
+		"highestBlock":     hexutil.Uint64(progress.HighestBlock),
+		"highestEpoch":     hexutil.Uint64(progress.HighestEpoch),
+		"pulledStates":     hexutil.Uint64(0), // back-compatibility
+		"knownStates":      hexutil.Uint64(0), // back-compatibility
+	}, nil
 }
 
 // PublicTxPoolAPI offers and API for the transaction pool. It only operates on data that is non confidential.
@@ -874,7 +891,7 @@ func DoEstimateGas(ctx context.Context, b Backend, args CallArgs, blockNr rpc.Bl
 	if args.Gas != nil && uint64(*args.Gas) >= params.TxGas {
 		hi = uint64(*args.Gas)
 	} else {
-		hi = basiccheck.MaxGasPowerUsed
+		hi = lachesisparams.MaxGasPowerUsed / 2
 	}
 	if gasCap != nil && hi > gasCap.Uint64() {
 		log.Warn("Caller gas above allowance, capping", "requested", hi, "cap", gasCap)
@@ -1002,13 +1019,16 @@ func RPCMarshalEventHeader(header *inter.EventHeaderData) map[string]interface{}
 		"creator":          header.Creator,
 		"prevEpochHash":    header.PrevEpochHash,
 		"parents":          eventIDsToHex(header.Parents),
-		"gasPowerLeft":     header.GasPowerLeft,
-		"gasPowerUsed":     header.GasPowerUsed,
 		"lamport":          header.Lamport,
 		"claimedTime":      header.ClaimedTime,
 		"medianTime":       header.MedianTime,
 		"extraData":        hexutil.Bytes(header.Extra),
 		"transactionsRoot": hexutil.Bytes(header.TxHash.Bytes()),
+		"gasPowerLeft": map[string]interface{}{
+			"shortTerm": header.GasPowerLeft.Gas[idx.ShortTermGas],
+			"longTerm":  header.GasPowerLeft.Gas[idx.LongTermGas],
+		},
+		"gasPowerUsed": header.GasPowerUsed,
 	}
 }
 
@@ -1176,7 +1196,7 @@ func newRPCTransaction(tx *types.Transaction, blockHash common.Hash, blockNumber
 		R:        (*hexutil.Big)(r),
 		S:        (*hexutil.Big)(s),
 	}
-	if blockHash != (common.Hash{}) {
+	if blockHash != hash.Zero {
 		result.BlockHash = &blockHash
 		result.BlockNumber = (*hexutil.Big)(new(big.Int).SetUint64(blockNumber))
 		result.TransactionIndex = (*hexutil.Uint64)(&index)
@@ -1348,7 +1368,7 @@ func (s *PublicTransactionPoolAPI) GetTransactionReceipt(ctx context.Context, ha
 	if header == nil || err != nil {
 		return nil, err
 	}
-	receipts, err := s.b.GetReceipts(ctx, rpc.BlockNumber(blockNumber))
+	receipts, err := s.b.GetReceiptsByNumber(ctx, rpc.BlockNumber(blockNumber))
 	if receipts == nil || err != nil {
 		return nil, err
 	}
@@ -1374,7 +1394,6 @@ func (s *PublicTransactionPoolAPI) GetTransactionReceipt(ctx context.Context, ha
 		"cumulativeGasUsed": hexutil.Uint64(receipt.CumulativeGasUsed),
 		"contractAddress":   nil,
 		"logs":              receipt.Logs,
-		"logsBloom":         receipt.Bloom,
 	}
 
 	// Assign receipt status or post state.
@@ -1754,46 +1773,6 @@ func (api *PublicDebugAPI) SeedHash(ctx context.Context, number uint64) (string,
 		return "", fmt.Errorf("block #%d not found", number)
 	}
 	return fmt.Sprintf("0x%x", ethash.SeedHash(number)), nil
-}
-
-// GetEventHeader returns the Lachesis event header by hash or short ID.
-func (api *PublicDebugAPI) GetEventHeader(ctx context.Context, shortEventID string) (map[string]interface{}, error) {
-	header, err := api.b.GetEventHeader(ctx, shortEventID)
-	if err != nil {
-		return nil, err
-	}
-	if header == nil {
-		return nil, fmt.Errorf("event %s not found", shortEventID)
-	}
-	return RPCMarshalEventHeader(header), nil
-}
-
-// GetEvent returns Lachesis event by hash or short ID.
-func (api *PublicDebugAPI) GetEvent(ctx context.Context, shortEventID string, inclTx bool) (map[string]interface{}, error) {
-	event, err := api.b.GetEvent(ctx, shortEventID)
-	if err != nil {
-		return nil, err
-	}
-	if event == nil {
-		return nil, fmt.Errorf("event %s not found", shortEventID)
-	}
-	return RPCMarshalEvent(event, inclTx, false)
-}
-
-// GetConsensusTime returns event's consensus time, if event is confirmed.
-func (api *PublicDebugAPI) GetConsensusTime(ctx context.Context, shortEventID string) (inter.Timestamp, error) {
-	return api.b.GetConsensusTime(ctx, shortEventID)
-}
-
-// GetHeads returns IDs of all the epoch events with no descendants.
-func (api *PublicDebugAPI) GetHeads(ctx context.Context, epoch int) ([]hexutil.Bytes, error) {
-	res, err := api.b.GetHeads(ctx, epoch)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return eventIDsToHex(res), nil
 }
 
 // PrivateDebugAPI is the collection of Ethereum APIs exposed over the private

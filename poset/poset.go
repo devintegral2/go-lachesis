@@ -1,8 +1,6 @@
 package poset
 
 import (
-	"github.com/Fantom-foundation/go-lachesis/utils"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
 
 	"github.com/Fantom-foundation/go-lachesis/eventcheck/epochcheck"
@@ -12,7 +10,17 @@ import (
 	"github.com/Fantom-foundation/go-lachesis/lachesis"
 	"github.com/Fantom-foundation/go-lachesis/logger"
 	"github.com/Fantom-foundation/go-lachesis/poset/election"
+	"github.com/Fantom-foundation/go-lachesis/utils"
 	"github.com/Fantom-foundation/go-lachesis/vector"
+)
+
+var (
+	ErrWrongEpochHash   = errors.New("mismatched prev epoch hash")
+	ErrNonZeroEpochHash = errors.New("prev epoch hash isn't zero for non-first event")
+	ErrCheatersObserved = errors.New("Cheaters observed by self-parent aren't allowed as parents")
+	ErrWrongFrame       = errors.New("Claimed frame mismatched with calculated")
+	ErrWrongIsRoot      = errors.New("Claimed isRoot mismatched with calculated")
+	ErrWrongMedianTime  = errors.New("Claimed medianTime mismatched with calculated")
 )
 
 // Poset processes events to get consensus.
@@ -61,7 +69,7 @@ func (p *Poset) LastBlock() (idx.Block, hash.Event) {
 // returns nil if event should be dropped
 func (p *Poset) Prepare(e *inter.Event) *inter.Event {
 	if err := epochcheck.New(&p.dag, p).Validate(e); err != nil {
-		p.Log.Error("Event prepare error", "err", err, "event", e.String())
+		p.Log.Error("Event prepare error", "err", err, "event", e)
 		return nil
 	}
 	id := e.Hash() // remember, because we change event here
@@ -70,20 +78,27 @@ func (p *Poset) Prepare(e *inter.Event) *inter.Event {
 
 	e.Frame, e.IsRoot = p.calcFrameIdx(e, false)
 	e.MedianTime = p.vecClock.MedianTime(id, p.PrevEpoch.Time)
-	e.PrevEpochHash = p.PrevEpoch.Hash()
+	if e.Seq <= 1 {
+		e.PrevEpochHash = p.PrevEpoch.Hash()
+	} else {
+		e.PrevEpochHash = hash.Zero
+	}
 
 	return e
 }
 
 // checks consensus-related fields: Frame, IsRoot, MedianTimestamp, PrevEpochHash
 func (p *Poset) checkAndSaveEvent(e *inter.Event) error {
-	if e.PrevEpochHash != p.PrevEpoch.Hash() {
-		return errors.New("Mismatched prev epoch hash")
+	if e.Seq <= 1 && e.PrevEpochHash != p.PrevEpoch.Hash() {
+		return ErrWrongEpochHash
+	}
+	if e.Seq > 1 && e.PrevEpochHash != hash.Zero {
+		return ErrNonZeroEpochHash
 	}
 
 	// don't link to known cheaters
 	if len(p.vecClock.NoCheaters(e.SelfParent(), e.Parents)) != len(e.Parents) {
-		return errors.New("Cheaters observed by self-parent aren't allowed as parents")
+		return ErrCheatersObserved
 	}
 
 	p.vecClock.Add(&e.EventHeaderData)
@@ -92,15 +107,15 @@ func (p *Poset) checkAndSaveEvent(e *inter.Event) error {
 	// check frame & isRoot
 	frameIdx, isRoot := p.calcFrameIdx(e, true)
 	if e.IsRoot != isRoot {
-		return errors.Errorf("Claimed isRoot mismatched with calculated (%v!=%v)", e.IsRoot, isRoot)
+		return ErrWrongIsRoot
 	}
 	if e.Frame != frameIdx {
-		return errors.Errorf("Claimed frame mismatched with calculated (%d!=%d)", e.Frame, frameIdx)
+		return ErrWrongFrame
 	}
 	// check median timestamp
 	medianTime := p.vecClock.MedianTime(e.Hash(), p.PrevEpoch.Time)
 	if e.MedianTime != medianTime {
-		return errors.Errorf("Claimed medianTime mismatched with calculated (%d!=%d)", e.MedianTime, medianTime)
+		return ErrWrongMedianTime
 	}
 
 	// save in DB the {vectorindex, e, heads}
@@ -144,12 +159,12 @@ func (p *Poset) handleElection(root *inter.Event) {
 	}
 }
 
-func (p *Poset) processRoot(f idx.Frame, from common.Address, id hash.Event) (decided *election.Res) {
+func (p *Poset) processRoot(f idx.Frame, from idx.StakerID, id hash.Event) (decided *election.Res) {
 	decided, err := p.election.ProcessRoot(election.RootAndSlot{
 		ID: id,
 		Slot: election.Slot{
-			Frame: f,
-			Addr:  from,
+			Frame:     f,
+			Validator: from,
 		},
 	})
 	if err != nil {
@@ -168,16 +183,16 @@ func (p *Poset) processKnownRoots() *election.Res {
 		frameRoots := p.store.GetFrameRoots(f)
 		for _, it := range frameRoots {
 			p.Log.Debug("Calculate root votes in new election", "root", it.ID.String())
-			decided = p.processRoot(it.Slot.Frame, it.Slot.Addr, it.ID)
+			decided = p.processRoot(it.Slot.Frame, it.Slot.Validator, it.ID)
 			if decided != nil {
-				break
+				return decided
 			}
 		}
 		if len(frameRoots) == 0 {
 			break
 		}
 	}
-	return decided
+	return nil
 }
 
 // ProcessEvent takes event into processing.
@@ -188,7 +203,7 @@ func (p *Poset) ProcessEvent(e *inter.Event) (err error) {
 	if err != nil {
 		return
 	}
-	p.Log.Debug("Consensus: start event processing", "event", e.String())
+	p.Log.Debug("Consensus: start event processing", "event", e)
 
 	err = p.checkAndSaveEvent(e)
 	if err != nil {
@@ -205,7 +220,7 @@ func (p *Poset) forklessCausedByQuorumOn(e *inter.Event, f idx.Frame) bool {
 	// check "observing" prev roots only if called by creator, or if creator has marked that event as root
 	for _, it := range p.store.GetFrameRoots(f) {
 		if p.vecClock.ForklessCause(e.Hash(), it.ID) {
-			observedCounter.Count(it.Slot.Addr)
+			observedCounter.Count(it.Slot.Validator)
 		}
 		if observedCounter.HasQuorum() {
 			break
@@ -247,26 +262,20 @@ func (p *Poset) calcFrameIdx(e *inter.Event, checkOnly bool) (frame idx.Frame, i
 			return selfParentFrame, false
 		}
 		// every root must be greater than prev. self-root. Instead, election will be faulty
-		isRoot = frame > selfParentFrame && (e.Frame <= 1 || p.forklessCausedByQuorumOn(e, e.Frame-1))
-		return frame, isRoot
+		// roots aren't allowed to "jump" to higher frame than selfParentFrame+1, even if they are forkless caused
+		// by 2/3W+1 there. It's because of liveness with forks, when up to 1/3W of roots on any frame may become "invisible"
+		// for forklessCause relation (so if we skip frames, there's may be deadlock when frames cannot advance because there's
+		// less than 2/3W visible roots)
+		isRoot = frame == selfParentFrame+1 && (e.Frame <= 1 || p.forklessCausedByQuorumOn(e, e.Frame-1))
+		return selfParentFrame + 1, isRoot
 	}
 
 	// calculate frame & isRoot
-	for f := maxParentsFrame + 1; f > selfParentFrame; f-- {
-		// Use the loop as a protection against forks.
-		// In more detail, forklessCause relation isn't transitive, unlike "happened-before", so we have to
-		// explicitly check forklessCausedByQuorumAt, because every root must be forkless caused by 2/3W prev roots.
-		// If there's no forks, then forklessCausedByQuorumAt always returns true for maxParentsFrame-1
-
-		if p.forklessCausedByQuorumOn(e, f-1) {
-			frame = f
-			isRoot = frame > selfParentFrame
-			return
-		}
-	}
-	// If we're here, then forklessCausedByQuorumAt returned false for every f >= selfParentFrame
 	if e.SelfParent() == nil {
 		return 1, true
+	}
+	if p.forklessCausedByQuorumOn(e, selfParentFrame) {
+		return selfParentFrame + 1, true
 	}
 	// Note: if we assign maxParentsFrame, it'll break the liveness for a case with forks, because there may be less
 	// than 2/3W possible roots at maxParentsFrame, even if 1 validator is cheater and 1/3W were offline for some time

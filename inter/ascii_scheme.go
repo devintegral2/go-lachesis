@@ -5,8 +5,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ethereum/go-ethereum/common"
-
 	"github.com/Fantom-foundation/go-lachesis/hash"
 	"github.com/Fantom-foundation/go-lachesis/inter/idx"
 )
@@ -26,11 +24,11 @@ func ASCIIschemeForEach(
 	scheme string,
 	callback ForEachEvent,
 ) (
-	nodes []common.Address,
-	events map[common.Address][]*Event,
+	nodes []idx.StakerID,
+	events map[idx.StakerID][]*Event,
 	names map[string]*Event,
 ) {
-	events = make(map[common.Address][]*Event)
+	events = make(map[idx.StakerID][]*Event)
 	names = make(map[string]*Event)
 	var (
 		prevFarRefs map[int]int
@@ -121,9 +119,9 @@ func ASCIIschemeForEach(
 		for i, name := range nNames {
 			// make node if don't exist
 			if len(nodes) <= nCreators[i] {
-				addr := common.BytesToAddress(hash.Of([]byte(name)).Bytes())
-				nodes = append(nodes, addr)
-				events[addr] = nil
+				validator := idx.BytesToStakerID(hash.Of([]byte(name)).Bytes()[:4])
+				nodes = append(nodes, validator)
+				events[validator] = nil
 			}
 			// find creator
 			creator := nodes[nCreators[i]]
@@ -209,8 +207,8 @@ func ASCIIschemeForEach(
 func ASCIIschemeToDAG(
 	scheme string,
 ) (
-	nodes []common.Address,
-	events map[common.Address][]*Event,
+	nodes []idx.StakerID,
+	events map[idx.StakerID][]*Event,
 	names map[string]*Event,
 ) {
 	return ASCIIschemeForEach(scheme, ForEachEvent{})
@@ -224,13 +222,13 @@ func DAGtoASCIIscheme(events Events) (string, error) {
 		scheme rows
 
 		processed = make(map[hash.Event]*Event)
-		peerCols  = make(map[common.Address]int)
+		nodeCols  = make(map[idx.StakerID]int)
 		ok        bool
 
-		eventIndex       = make(map[common.Address]map[hash.Event]int)
-		creatorLastIndex = make(map[common.Address]int)
+		eventIndex       = make(map[idx.StakerID]map[hash.Event]int)
+		creatorLastIndex = make(map[idx.StakerID]int)
 
-		seqCount = make(map[common.Address]map[idx.Event]int)
+		seqCount = make(map[idx.StakerID]map[idx.Event]int)
 	)
 	for _, e := range events {
 		// if count of unique seq > 1 -> fork
@@ -253,9 +251,9 @@ func DAGtoASCIIscheme(events Events) (string, error) {
 		ehash := e.Hash()
 		r := &row{}
 		// creator
-		if r.Self, ok = peerCols[e.Creator]; !ok {
-			r.Self = len(peerCols)
-			peerCols[e.Creator] = r.Self
+		if r.Self, ok = nodeCols[e.Creator]; !ok {
+			r.Self = len(nodeCols)
+			nodeCols[e.Creator] = r.Self
 		}
 		// name
 		r.Name = hash.GetEventName(ehash)
@@ -270,7 +268,7 @@ func DAGtoASCIIscheme(events Events) (string, error) {
 			scheme.ColWidth = w
 		}
 		// parents
-		r.Refs = make([]int, len(peerCols))
+		r.Refs = make([]int, len(nodeCols))
 		selfRefs := 0
 		for _, p := range e.Parents {
 			parent := processed[p]
@@ -286,7 +284,7 @@ func DAGtoASCIIscheme(events Events) (string, error) {
 				}
 			}
 
-			refCol := peerCols[parent.Creator]
+			refCol := nodeCols[parent.Creator]
 
 			var shift int
 			if parent.Creator != e.Creator {

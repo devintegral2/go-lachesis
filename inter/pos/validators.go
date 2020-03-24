@@ -2,6 +2,7 @@ package pos
 
 import (
 	"io"
+	"math/big"
 	"sort"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -11,118 +12,162 @@ import (
 )
 
 type (
-	// Validators of epoch with stake.
-	Validators struct {
-		indexes   map[common.Address]int
-		list      []Stake
-		addresses []common.Address
+	cache struct {
+		indexes    map[idx.StakerID]idx.Validator
+		stakes     []Stake
+		ids        []idx.StakerID
+		totalStake Stake
 	}
+	// Validators group of an epoch with stakes.
+	// Optimized for BFT algorithm calculations.
+	// Read-only.
+	Validators struct {
+		values map[idx.StakerID]Stake
+		cache  cache
+	}
+
+	// ValidatorsBuilder is a helper to create Validators object
+	ValidatorsBuilder map[idx.StakerID]Stake
+
+	// GenesisValidator is helper structure to define genesis validators
+	GenesisValidator struct {
+		ID      idx.StakerID
+		Address common.Address
+		Stake   *big.Int
+	}
+
+	// GValidators defines genesis validators
+	GValidators []GenesisValidator
 )
 
-// NewValidators return new pointer of Validators object
-func NewValidators() *Validators {
-	return &Validators{
-		indexes:   make(map[common.Address]int),
-		list:      make([]Stake, 0, 200),
-		addresses: make([]common.Address, 0, 200),
-	}
+var (
+	// EmptyValidators is empty validators group
+	EmptyValidators = NewBuilder().Build()
+)
+
+// NewBuilder creates new mutable ValidatorsBuilder
+func NewBuilder() ValidatorsBuilder {
+	return ValidatorsBuilder{}
 }
 
-// Len return count of validators in Validators objects
-func (vv Validators) Len() int {
-	return len(vv.list)
-}
-
-// Iterate return chanel of common.Address for get validators in loop
-func (vv Validators) Iterate() <-chan common.Address {
-	c := make(chan common.Address)
-	go func() {
-		for _, a := range vv.addresses {
-			c <- a
-		}
-		close(c)
-	}()
-	return c
-}
-
-// Set appends item to Validator object
-func (vv *Validators) Set(addr common.Address, stake Stake) {
-	if stake != 0 {
-		i, ok := vv.indexes[addr]
-		if ok {
-			vv.list[i] = stake
-			return
-		}
-		vv.list = append(vv.list, stake)
-		vv.addresses = append(vv.addresses, addr)
-		vv.indexes[addr] = len(vv.list) - 1
+// Set appends item to ValidatorsBuilder object
+func (vv ValidatorsBuilder) Set(id idx.StakerID, stake Stake) {
+	if stake == 0 {
+		delete(vv, id)
 	} else {
-		i, ok := vv.indexes[addr]
-		if ok {
-			delete(vv.indexes, addr)
-			idxOrig := len(vv.list) - 1
-			if i == idxOrig {
-				vv.list = vv.list[:idxOrig]
-				vv.addresses = vv.addresses[:idxOrig]
-			} else {
-				// Move last to deleted position + truncate list len
-				vv.list[i] = vv.list[idxOrig]
-				vv.list = vv.list[:idxOrig]
-
-				vv.indexes[vv.addresses[idxOrig]] = i
-
-				vv.addresses[i] = vv.addresses[idxOrig]
-				vv.addresses = vv.addresses[:idxOrig]
-			}
-		}
+		vv[id] = stake
 	}
 }
 
-// Get return stake for validator address
-func (vv Validators) Get(addr common.Address) Stake {
-	i, ok := vv.indexes[addr]
-	if ok {
-		return vv.list[i]
-	}
-	return 0
+// Build new read-only Validators object
+func (vv ValidatorsBuilder) Build() *Validators {
+	return newValidators(vv)
 }
 
-// Exists return boolean true if address exists in Validators object
-func (vv Validators) Exists(addr common.Address) bool {
-	_, ok := vv.indexes[addr]
+// EqualStakeValidators builds new read-only Validators object with equal stakes (for tests)
+func EqualStakeValidators(ids []idx.StakerID, stake Stake) *Validators {
+	builder := NewBuilder()
+	for _, id := range ids {
+		builder.Set(id, stake)
+	}
+	return builder.Build()
+}
+
+// ArrayToValidators builds new read-only Validators object from array
+func ArrayToValidators(ids []idx.StakerID, stakes []Stake) *Validators {
+	builder := NewBuilder()
+	for i, id := range ids {
+		builder.Set(id, stakes[i])
+	}
+	return builder.Build()
+}
+
+// newValidators builds new read-only Validators object
+func newValidators(values ValidatorsBuilder) *Validators {
+	valuesCopy := make(ValidatorsBuilder)
+	for id, s := range values {
+		valuesCopy.Set(id, s)
+	}
+
+	vv := &Validators{
+		values: valuesCopy,
+	}
+	vv.cache = vv.calcCaches()
+	return vv
+}
+
+// Len returns count of validators in Validators objects
+func (vv *Validators) Len() int {
+	return len(vv.values)
+}
+
+// calcCaches calculates internal caches for validators
+func (vv *Validators) calcCaches() cache {
+	cache := cache{
+		indexes: make(map[idx.StakerID]idx.Validator),
+		stakes:  make([]Stake, vv.Len()),
+		ids:     make([]idx.StakerID, vv.Len()),
+	}
+
+	for i, v := range vv.sortedArray() {
+		cache.indexes[v.ID] = idx.Validator(i)
+		cache.stakes[i] = v.Stake
+		cache.ids[i] = v.ID
+		cache.totalStake += v.Stake
+	}
+
+	return cache
+}
+
+// Get returns stake for validator by ID
+func (vv *Validators) Get(id idx.StakerID) Stake {
+	return vv.values[id]
+}
+
+// GetIdx returns index (offset) of validator in the group
+func (vv *Validators) GetIdx(id idx.StakerID) idx.Validator {
+	return vv.cache.indexes[id]
+}
+
+// GetStakeByIdx returns stake for validator by index
+func (vv *Validators) GetStakeByIdx(i idx.Validator) Stake {
+	return vv.cache.stakes[i]
+}
+
+// Exists returns boolean true if address exists in Validators object
+func (vv *Validators) Exists(id idx.StakerID) bool {
+	_, ok := vv.values[id]
 	return ok
 }
 
-// Addresses returns not sorted addresses.
-func (vv Validators) Addresses() []common.Address {
-	return vv.addresses
+// IDs returns not sorted ids.
+func (vv *Validators) IDs() []idx.StakerID {
+	return vv.cache.ids
 }
 
-// SortedAddresses returns deterministically sorted addresses.
+// SortedIDs returns deterministically sorted ids.
 // The order is the same as for Idxs().
-func (vv Validators) SortedAddresses() []common.Address {
-	array := make([]common.Address, len(vv.list))
-	for i, s := range vv.sortedArray() {
-		array[i] = s.Addr
-	}
-	return array
+func (vv *Validators) SortedIDs() []idx.StakerID {
+	return vv.cache.ids
+}
+
+// SortedStakes returns deterministically sorted stakes.
+// The order is the same as for Idxs().
+func (vv *Validators) SortedStakes() []Stake {
+	return vv.cache.stakes
 }
 
 // Idxs gets deterministic total order of validators.
-func (vv Validators) Idxs() map[common.Address]idx.Validator {
-	idxs := make(map[common.Address]idx.Validator, len(vv.list))
-	for i, v := range vv.sortedArray() {
-		idxs[v.Addr] = idx.Validator(i)
-	}
-	return idxs
+func (vv *Validators) Idxs() map[idx.StakerID]idx.Validator {
+	return vv.cache.indexes
 }
 
-func (vv Validators) sortedArray() validators {
-	array := make(validators, 0, len(vv.list))
-	for addr, i := range vv.indexes {
-		s := vv.list[i]
+// sortedArray is sorted by stake and ID
+func (vv *Validators) sortedArray() validators {
+	array := make(validators, 0, len(vv.values))
+	for id, s := range vv.values {
 		array = append(array, validator{
-			Addr:  addr,
+			ID:    id,
 			Stake: s,
 		})
 	}
@@ -131,71 +176,78 @@ func (vv Validators) sortedArray() validators {
 }
 
 // Copy constructs a copy.
-func (vv Validators) Copy() Validators {
-	res := NewValidators()
+func (vv *Validators) Copy() *Validators {
+	return newValidators(vv.values)
+}
 
-	if cap(res.list) < len(vv.list) {
-		res.list = make([]Stake, len(vv.list))
-		res.addresses = make([]common.Address, len(vv.list))
-	}
-	res.list = res.list[0:len(vv.list)]
-	res.addresses = res.addresses[0:len(vv.list)]
-	copy(res.list, vv.list)
-	copy(res.addresses, vv.addresses)
-
-	for addr, i := range vv.indexes {
-		res.indexes[addr] = i
-	}
-
-	return *res
+// Builder returns a mutable copy of content
+func (vv *Validators) Builder() ValidatorsBuilder {
+	return vv.Copy().values
 }
 
 // Quorum limit of validators.
-func (vv Validators) Quorum() Stake {
+func (vv *Validators) Quorum() Stake {
 	return vv.TotalStake()*2/3 + 1
 }
 
 // TotalStake of validators.
-func (vv Validators) TotalStake() (sum Stake) {
-	for _, s := range vv.list {
-		sum += s
-	}
-	return
-}
-
-// StakeOf validator.
-func (vv Validators) StakeOf(n common.Address) Stake {
-	return vv.Get(n)
+func (vv *Validators) TotalStake() (sum Stake) {
+	return vv.cache.totalStake
 }
 
 // EncodeRLP is for RLP serialization.
-func (vv Validators) EncodeRLP(w io.Writer) error {
+func (vv *Validators) EncodeRLP(w io.Writer) error {
 	return rlp.Encode(w, vv.sortedArray())
 }
 
 // DecodeRLP is for RLP deserialization.
 func (vv *Validators) DecodeRLP(s *rlp.Stream) error {
-	if vv == nil {
-		vv = NewValidators()
-	}
-	if vv.addresses == nil {
-		vv.addresses = make([]common.Address, 0, 200)
-	}
-	if vv.indexes == nil {
-		vv.indexes = make(map[common.Address]int)
-	}
-	if vv.list == nil {
-		vv.list = make([]Stake, 0, 200)
-	}
-
 	var arr []validator
 	if err := s.Decode(&arr); err != nil {
 		return err
 	}
 
+	builder := NewBuilder()
 	for _, w := range arr {
-		vv.Set(w.Addr, w.Stake)
+		builder.Set(w.ID, w.Stake)
 	}
+	*vv = *builder.Build()
 
 	return nil
+}
+
+// Validators converts GValidators to Validators
+func (gv GValidators) Validators() *Validators {
+	builder := NewBuilder()
+	for _, validator := range gv {
+		builder.Set(validator.ID, BalanceToStake(validator.Stake))
+	}
+	return builder.Build()
+}
+
+// TotalStake returns sum of stakes
+func (gv GValidators) TotalStake() *big.Int {
+	totalStake := new(big.Int)
+	for _, validator := range gv {
+		totalStake.Add(totalStake, validator.Stake)
+	}
+	return totalStake
+}
+
+// Map converts GValidators to map
+func (gv GValidators) Map() map[idx.StakerID]GenesisValidator {
+	validators := map[idx.StakerID]GenesisValidator{}
+	for _, validator := range gv {
+		validators[validator.ID] = validator
+	}
+	return validators
+}
+
+// Addresses returns not sorted genesis addresses
+func (gv GValidators) Addresses() []common.Address {
+	res := make([]common.Address, 0, len(gv))
+	for _, v := range gv {
+		res = append(res, v.Address)
+	}
+	return res
 }

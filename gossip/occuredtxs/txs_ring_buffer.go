@@ -42,11 +42,7 @@ func (ring *buffer) Add(hash common.Hash, sender common.Address) {
 
 // Delete is not safe for concurrent use
 func (ring *buffer) Delete(hash common.Hash) {
-	sender, ok := ring.Get(hash)
 	ring.senders.Remove(hash)
-	if ok {
-		ring.decreaseSender(sender)
-	}
 }
 
 // decreaseSender is not safe for concurrent use
@@ -115,7 +111,7 @@ func (s *Buffer) Clear() {
 	s.ring.Clear()
 }
 
-// Len is not safe for concurrent use
+// Len is safe for concurrent use
 func (s *Buffer) Len() int {
 	return s.ring.senders.Len()
 }

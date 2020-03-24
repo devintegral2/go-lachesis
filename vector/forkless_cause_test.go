@@ -7,7 +7,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/Fantom-foundation/go-lachesis/hash"
@@ -41,18 +40,15 @@ a0_1(3)  b0_1     c0_1     d0_1     e0_1     f0_1     g0_1     h0_1     i0_1    
 func benchForklessCauseProcess(b *testing.B, dag string, idx *int) {
 	logger.SetTestMode(b)
 
-	peers, _, _ := inter.ASCIIschemeToDAG(dag)
-	validators := pos.NewValidators()
-	for _, peer := range peers {
-		validators.Set(peer, pos.Stake(1))
-	}
+	nodes, _, _ := inter.ASCIIschemeToDAG(dag)
+	validators := pos.EqualStakeValidators(nodes, 1)
 
 	events := make(map[hash.Event]*inter.EventHeaderData)
 	getEvent := func(id hash.Event) *inter.EventHeaderData {
 		return events[id]
 	}
 
-	vi := NewIndex(DefaultIndexConfig(), *validators, memorydb.New(), getEvent)
+	vi := NewIndex(DefaultIndexConfig(), validators, memorydb.New(), getEvent)
 
 	_, _, named := inter.ASCIIschemeForEach(dag, inter.ForEachEvent{
 		Process: func(e *inter.Event, name string) {
@@ -129,18 +125,15 @@ func testForklessCaused(t *testing.T, dag string) {
 	logger.SetTestMode(t)
 	assertar := assert.New(t)
 
-	peers, _, _ := inter.ASCIIschemeToDAG(dag)
-	validators := pos.NewValidators()
-	for _, peer := range peers {
-		validators.Set(peer, pos.Stake(1))
-	}
+	nodes, _, _ := inter.ASCIIschemeToDAG(dag)
+	validators := pos.EqualStakeValidators(nodes, 1)
 
 	events := make(map[hash.Event]*inter.EventHeaderData)
 	getEvent := func(id hash.Event) *inter.EventHeaderData {
 		return events[id]
 	}
 
-	vi := NewIndex(DefaultIndexConfig(), *validators, memorydb.New(), getEvent)
+	vi := NewIndex(DefaultIndexConfig(), validators, memorydb.New(), getEvent)
 
 	_, _, named := inter.ASCIIschemeForEach(dag, inter.ForEachEvent{
 		Process: func(e *inter.Event, name string) {
@@ -441,23 +434,20 @@ func TestForklessCausedRandom(t *testing.T) {
 	}
 
 	ordered := make([]*inter.Event, 0)
-	peers, _, named := inter.ASCIIschemeForEach(dag, inter.ForEachEvent{
+	nodes, _, named := inter.ASCIIschemeForEach(dag, inter.ForEachEvent{
 		Process: func(e *inter.Event, name string) {
 			ordered = append(ordered, e)
 		},
 	})
 
-	validators := pos.NewValidators()
-	for _, peer := range peers {
-		validators.Set(peer, pos.Stake(1))
-	}
+	validators := pos.EqualStakeValidators(nodes, 1)
 
 	events := make(map[hash.Event]*inter.EventHeaderData)
 	getEvent := func(id hash.Event) *inter.EventHeaderData {
 		return events[id]
 	}
 
-	vi := NewIndex(DefaultIndexConfig(), *validators, memorydb.New(), getEvent)
+	vi := NewIndex(DefaultIndexConfig(), validators, memorydb.New(), getEvent)
 
 	// push
 	for _, e := range ordered {
@@ -483,28 +473,31 @@ func TestForklessCausedRandom(t *testing.T) {
 
 type eventSlot struct {
 	seq     idx.Event
-	creator common.Address
+	creator idx.StakerID
 }
 
 // naive implementation of fork detection, O(n)
-func testForksDetected(vi *Index, head *inter.EventHeaderData) (cheaters map[common.Address]bool, err error) {
-	cheaters = map[common.Address]bool{}
+func testForksDetected(vi *Index, head *inter.EventHeaderData) (cheaters map[idx.StakerID]bool, err error) {
+	cheaters = map[idx.StakerID]bool{}
 	visited := hash.EventsSet{}
 	detected := map[eventSlot]int{}
-	err = vi.dfsSubgraph(head, func(e *inter.EventHeaderData) (godeeper bool) {
+	onWalk := func(id hash.Event) (godeeper bool) {
 		// ensure visited once
-		if visited.Contains(e.Hash()) {
+		if visited.Contains(id) {
 			return false
 		}
-		visited.Add(e.Hash())
+		visited.Add(id)
 
+		e := vi.getEvent(id)
 		slot := eventSlot{
 			seq:     e.Seq,
 			creator: e.Creator,
 		}
 		detected[slot]++
 		return true
-	})
+	}
+	onWalk(head.Hash())
+	err = vi.dfsSubgraph(head, onWalk)
 	for s, count := range detected {
 		if count > 1 {
 			cheaters[s.creator] = true
@@ -515,23 +508,24 @@ func testForksDetected(vi *Index, head *inter.EventHeaderData) (cheaters map[com
 
 func TestRandomForksSanity(t *testing.T) {
 	nodes := inter.GenNodes(8)
-	cheaters := []common.Address{nodes[0], nodes[1], nodes[2]}
+	cheaters := []idx.StakerID{nodes[0], nodes[1], nodes[2]}
 
-	validators := pos.NewValidators()
+	validatorsBuilder := pos.NewBuilder()
 	for _, peer := range nodes {
-		validators.Set(peer, pos.Stake(1))
+		validatorsBuilder.Set(peer, pos.Stake(1))
 	}
 
-	validators.Set(cheaters[0], pos.Stake(2))
-	validators.Set(nodes[3], pos.Stake(2))
-	validators.Set(nodes[4], pos.Stake(3))
+	validatorsBuilder.Set(cheaters[0], pos.Stake(2))
+	validatorsBuilder.Set(nodes[3], pos.Stake(2))
+	validatorsBuilder.Set(nodes[4], pos.Stake(3))
+	validators := validatorsBuilder.Build()
 
 	processed := make(map[hash.Event]*inter.EventHeaderData)
 	getEvent := func(id hash.Event) *inter.EventHeaderData {
 		return processed[id]
 	}
 
-	vi := NewIndex(DefaultIndexConfig(), *validators, memorydb.New(), getEvent)
+	vi := NewIndex(DefaultIndexConfig(), validators, memorydb.New(), getEvent)
 
 	// Many forks from each node in large graph, so probability of not seeing a fork is negligible
 	events := inter.ForEachRandFork(nodes, cheaters, 300, 4, 30, nil, inter.ForEachEvent{
@@ -549,18 +543,18 @@ func TestRandomForksSanity(t *testing.T) {
 
 	// quick sanity check. all the nodes should see that cheaters have a fork, and honest nodes don't have forks
 	assertar := assert.New(t)
-	idxs := validators.Idxs()
+	idxs := validatorsBuilder.Build().Idxs()
 	for _, node := range nodes {
 		ee := events[node]
 		highestBefore := vi.GetHighestBeforeSeq(ee[len(ee)-1].Hash())
 		for n, cheater := range nodes {
 			branchSeq := highestBefore.Get(idxs[cheater])
 			isCheater := n < len(cheaters)
-			assertar.Equal(isCheater, branchSeq.IsForkDetected(), cheater.String())
+			assertar.Equal(isCheater, branchSeq.IsForkDetected(), cheater)
 			if isCheater {
-				assertar.Equal(idx.Event(0), branchSeq.Seq, cheater.String())
+				assertar.Equal(idx.Event(0), branchSeq.Seq, cheater)
 			} else {
-				assertar.NotEqual(idx.Event(0), branchSeq.Seq, cheater.String())
+				assertar.NotEqual(idx.Event(0), branchSeq.Seq, cheater)
 			}
 		}
 	}
@@ -648,10 +642,7 @@ func TestRandomForks(t *testing.T) {
 			nodes := inter.GenNodes(test.nodesNum)
 			cheaters := nodes[:test.cheatersNum]
 
-			validators := pos.NewValidators()
-			for _, peer := range nodes {
-				validators.Set(peer, pos.Stake(1))
-			}
+			validators := pos.EqualStakeValidators(nodes, 1)
 
 			processedArr := inter.Events{}
 			processed := make(map[hash.Event]*inter.EventHeaderData)
@@ -659,7 +650,7 @@ func TestRandomForks(t *testing.T) {
 				return processed[id]
 			}
 
-			vi := NewIndex(DefaultIndexConfig(), *validators, memorydb.New(), getEvent)
+			vi := NewIndex(DefaultIndexConfig(), validators, memorydb.New(), getEvent)
 
 			_ = inter.ForEachRandFork(nodes, cheaters, test.eventsNum, test.parentsNum, test.forksNum, r, inter.ForEachEvent{
 				Process: func(e *inter.Event, name string) {
@@ -687,9 +678,9 @@ func TestRandomForks(t *testing.T) {
 				for _, cheater := range nodes {
 					expectedCheater := expectedCheaters[cheater]
 					branchSeq := highestBefore.Get(idxs[cheater])
-					assertar.Equal(expectedCheater, branchSeq.IsForkDetected(), cheater.String()+"_"+e.Creator.String()+"_"+e.String())
+					assertar.Equal(expectedCheater, branchSeq.IsForkDetected(), e.String())
 					if expectedCheater {
-						assertar.Equal(idx.Event(0), branchSeq.Seq, cheater.String()+"_"+e.Creator.String()+"_"+e.String())
+						assertar.Equal(idx.Event(0), branchSeq.Seq, e.String())
 					}
 				}
 			}
@@ -728,7 +719,7 @@ func TestRandomForks(t *testing.T) {
 					vi.Add(&a.EventHeaderData)
 				}
 
-				vi.forklessCauseCache.Purge() // disable cache
+				vi.cache.ForklessCause.Purge() // disable cache
 				for _, a := range processedArr {
 					res := vi.MedianTime(a.Hash(), inter.Timestamp(testTime/2))
 					assertar.Equal(medianTimeMap[a.Hash()], res, "%s %d", a.Hash().String(), reorderTry)

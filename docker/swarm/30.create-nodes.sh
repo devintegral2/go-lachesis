@@ -35,9 +35,9 @@ do
    ${REGISTRY_HOST}/lachesis:${TAG} --nousb \
     --fakenet=$ACC/$N,/tmp/test_accs.json \
     --port=${PORT} --nat="extip:${SWARM_HOST}" \
-    --rpc --rpcaddr="0.0.0.0" --rpcport=${RPCP} --rpcvhosts="*" --rpccorsdomain="*" --rpcapi="eth,debug,admin,web3,personal,net" \
-    --ws --wsaddr="0.0.0.0" --wsport=${WSP} --wsorigins="*" --wsapi="eth,debug,admin,web3,personal,net" \
-    --verbosity=5 --metrics --tracing \
+    --rpc --rpcaddr="0.0.0.0" --rpcport=${RPCP} --rpcvhosts="*" --rpccorsdomain="*" --rpcapi="eth,debug,admin,web3,personal,net,txpool,ftm,sfc" \
+    --ws --wsaddr="0.0.0.0" --wsport=${WSP} --wsorigins="*" --wsapi="eth,debug,admin,web3,personal,net,txpool,ftm,sfc" \
+    --verbosity=3 --metrics --tracing \
     ${bootnode}
 
     if [ -z "$bootnode" ]

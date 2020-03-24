@@ -50,7 +50,7 @@ type (
 // ToEvmHeader converts inter.Block to EvmHeader.
 func ToEvmHeader(block *inter.Block) *EvmHeader {
 	return &EvmHeader{
-		Hash:       common.Hash(block.Hash()),
+		Hash:       common.Hash(block.Atropos),
 		ParentHash: common.Hash(block.PrevHash),
 		Root:       common.Hash(block.Root),
 		TxHash:     block.TxHash,
@@ -67,7 +67,7 @@ func ConvertFromEthHeader(h *types.Header) *EvmHeader {
 	return &EvmHeader{
 		Number:     h.Number,
 		Coinbase:   h.Coinbase,
-		GasLimit:   h.GasLimit,
+		GasLimit:   math.MaxUint64,
 		GasUsed:    h.GasUsed,
 		Root:       h.Root,
 		TxHash:     h.TxHash,
@@ -83,7 +83,7 @@ func (h *EvmHeader) EthHeader() *types.Header {
 	return &types.Header{
 		Number:     h.Number,
 		Coinbase:   h.Coinbase,
-		GasLimit:   h.GasLimit,
+		GasLimit:   0xffffffffffff, // don't use h.GasLimit (too much bits) here to avoid parsing issues
 		GasUsed:    h.GasUsed,
 		Root:       h.Root,
 		TxHash:     h.TxHash,
@@ -113,5 +113,8 @@ func (b *EvmBlock) NumberU64() uint64 {
 }
 
 func (b *EvmBlock) EthBlock() *types.Block {
+	if b == nil {
+		return nil
+	}
 	return types.NewBlock(b.EvmHeader.EthHeader(), b.Transactions, nil, nil)
 }

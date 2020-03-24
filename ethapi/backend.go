@@ -20,6 +20,7 @@ package ethapi
 import (
 	"context"
 	"math/big"
+	"time"
 
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/common"
@@ -34,16 +35,29 @@ import (
 	"github.com/Fantom-foundation/go-lachesis/evmcore"
 	"github.com/Fantom-foundation/go-lachesis/hash"
 	"github.com/Fantom-foundation/go-lachesis/inter"
+	"github.com/Fantom-foundation/go-lachesis/inter/idx"
+	"github.com/Fantom-foundation/go-lachesis/inter/pos"
+	"github.com/Fantom-foundation/go-lachesis/inter/sfctype"
 )
+
+// PeerProgress is synchronization status of a peer
+type PeerProgress struct {
+	CurrentEpoch     idx.Epoch
+	CurrentBlock     idx.Block
+	CurrentBlockHash hash.Event
+	CurrentBlockTime inter.Timestamp
+	HighestBlock     idx.Block
+	HighestEpoch     idx.Epoch
+}
 
 // Backend interface provides the common API services (that are provided by
 // both full and light clients) with access to necessary functions.
 type Backend interface {
 	// General Ethereum API
 	ProtocolVersion() int
+	Progress() PeerProgress
 	SuggestPrice(ctx context.Context) (*big.Int, error)
 	ChainDb() ethdb.Database
-	NotifyMux() *notify.TypeMux
 	AccountManager() *accounts.Manager
 	ExtRPCEnabled() bool
 	RPCGasCap() *big.Int // global gas cap for eth_call over rpc: DoS protection
@@ -53,9 +67,9 @@ type Backend interface {
 	HeaderByHash(ctx context.Context, hash common.Hash) (*evmcore.EvmHeader, error)
 	BlockByNumber(ctx context.Context, number rpc.BlockNumber) (*evmcore.EvmBlock, error)
 	StateAndHeaderByNumber(ctx context.Context, number rpc.BlockNumber) (*state.StateDB, *evmcore.EvmHeader, error)
-	GetHeader(ctx context.Context, hash common.Hash) *evmcore.EvmHeader
+	//GetHeader(ctx context.Context, hash common.Hash) *evmcore.EvmHeader
 	GetBlock(ctx context.Context, hash common.Hash) (*evmcore.EvmBlock, error)
-	GetReceipts(ctx context.Context, number rpc.BlockNumber) (types.Receipts, error)
+	GetReceiptsByNumber(ctx context.Context, number rpc.BlockNumber) (types.Receipts, error)
 	GetTd(hash common.Hash) *big.Int
 	GetEVM(ctx context.Context, msg evmcore.Message, state *state.StateDB, header *evmcore.EvmHeader) (*vm.EVM, func() error, error)
 
@@ -72,16 +86,37 @@ type Backend interface {
 	ChainConfig() *params.ChainConfig
 	CurrentBlock() *evmcore.EvmBlock
 
-	// Lachesis debug API
+	// Lachesis DAG API
 	GetEvent(ctx context.Context, shortEventID string) (*inter.Event, error)
 	GetEventHeader(ctx context.Context, shortEventID string) (*inter.EventHeaderData, error)
 	GetConsensusTime(ctx context.Context, shortEventID string) (inter.Timestamp, error)
-	GetHeads(ctx context.Context, epoch int) (hash.Events, error)
+	GetHeads(ctx context.Context, epoch rpc.BlockNumber) (hash.Events, error)
+	CurrentEpoch(ctx context.Context) idx.Epoch
+	GetEpochStats(ctx context.Context, requestedEpoch rpc.BlockNumber) (*sfctype.EpochStats, error)
+	TtfReport(ctx context.Context, untilBlock rpc.BlockNumber, maxBlocks idx.Block, mode string) (map[hash.Event]time.Duration, error)
+	ForEachEvent(ctx context.Context, epoch rpc.BlockNumber, onEvent func(event *inter.Event) bool) error
+	ValidatorTimeDrifts(ctx context.Context, epoch rpc.BlockNumber, maxEvents idx.Event) (map[idx.StakerID]map[hash.Event]time.Duration, error)
+
+	// Lachesis SFC API
+	GetValidators(ctx context.Context) *pos.Validators
+	GetValidationScore(ctx context.Context, stakerID idx.StakerID) (*big.Int, error)
+	GetOriginationScore(ctx context.Context, stakerID idx.StakerID) (*big.Int, error)
+	GetRewardWeights(ctx context.Context, stakerID idx.StakerID) (*big.Int, *big.Int, error)
+	GetStakerPoI(ctx context.Context, stakerID idx.StakerID) (*big.Int, error)
+	GetDowntime(ctx context.Context, stakerID idx.StakerID) (idx.Block, inter.Timestamp, error)
+	GetDelegatorClaimedRewards(ctx context.Context, addr common.Address) (*big.Int, error)
+	GetStakerClaimedRewards(ctx context.Context, stakerID idx.StakerID) (*big.Int, error)
+	GetStakerDelegatorsClaimedRewards(ctx context.Context, stakerID idx.StakerID) (*big.Int, error)
+	GetStaker(ctx context.Context, stakerID idx.StakerID) (*sfctype.SfcStaker, error)
+	GetStakerID(ctx context.Context, addr common.Address) (idx.StakerID, error)
+	GetStakers(ctx context.Context) ([]sfctype.SfcStakerAndID, error)
+	GetDelegatorsOf(ctx context.Context, stakerID idx.StakerID) ([]sfctype.SfcDelegatorAndAddr, error)
+	GetDelegator(ctx context.Context, addr common.Address) (*sfctype.SfcDelegator, error)
 }
 
 func GetAPIs(apiBackend Backend) []rpc.API {
 	nonceLock := new(AddrLocker)
-	return []rpc.API{
+	orig := []rpc.API{
 		{
 			Namespace: "eth",
 			Version:   "1.0",
@@ -91,6 +126,11 @@ func GetAPIs(apiBackend Backend) []rpc.API {
 			Namespace: "eth",
 			Version:   "1.0",
 			Service:   NewPublicBlockChainAPI(apiBackend),
+			Public:    true,
+		}, {
+			Namespace: "eth",
+			Version:   "1.0",
+			Service:   NewPublicDAGChainAPI(apiBackend),
 			Public:    true,
 		}, {
 			Namespace: "eth",
@@ -121,6 +161,43 @@ func GetAPIs(apiBackend Backend) []rpc.API {
 			Version:   "1.0",
 			Service:   NewPrivateAccountAPI(apiBackend, nonceLock),
 			Public:    false,
+		}, {
+			Namespace: "sfc",
+			Version:   "1.0",
+			Service:   NewPublicSfcAPI(apiBackend),
+			Public:    false,
 		},
 	}
+
+	// NOTE: eth-namespace is doubled as ftm-namespace for branding purpose
+	double := []rpc.API{
+		{
+			Namespace: "ftm",
+			Version:   "1.0",
+			Service:   NewPublicEthereumAPI(apiBackend),
+			Public:    true,
+		}, {
+			Namespace: "ftm",
+			Version:   "1.0",
+			Service:   NewPublicBlockChainAPI(apiBackend),
+			Public:    true,
+		}, {
+			Namespace: "ftm",
+			Version:   "1.0",
+			Service:   NewPublicDAGChainAPI(apiBackend),
+			Public:    true,
+		}, {
+			Namespace: "ftm",
+			Version:   "1.0",
+			Service:   NewPublicTransactionPoolAPI(apiBackend, nonceLock),
+			Public:    true,
+		}, {
+			Namespace: "ftm",
+			Version:   "1.0",
+			Service:   NewPublicAccountAPI(apiBackend.AccountManager()),
+			Public:    true,
+		},
+	}
+
+	return append(orig, double...)
 }

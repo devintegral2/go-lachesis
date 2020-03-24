@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"sort"
@@ -10,12 +11,11 @@ import (
 	"github.com/ethereum/go-ethereum/accounts"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/cmd/utils"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/console"
-	"github.com/ethereum/go-ethereum/eth/downloader"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/params"
 	"gopkg.in/urfave/cli.v1"
 
 	"github.com/Fantom-foundation/go-lachesis/cmd/lachesis/metrics"
@@ -23,7 +23,8 @@ import (
 	"github.com/Fantom-foundation/go-lachesis/debug"
 	"github.com/Fantom-foundation/go-lachesis/gossip"
 	"github.com/Fantom-foundation/go-lachesis/integration"
-	"github.com/Fantom-foundation/go-lachesis/params"
+	"github.com/Fantom-foundation/go-lachesis/utils/errlock"
+	_ "github.com/Fantom-foundation/go-lachesis/version"
 )
 
 const (
@@ -104,7 +105,7 @@ func init() {
 		utils.EWASMInterpreterFlag,
 		utils.EVMInterpreterFlag,
 		configFileFlag,
-		coinbaseFlag,
+		validatorFlag,
 	}
 
 	rpcFlags = []cli.Flag{
@@ -156,8 +157,11 @@ func init() {
 		consoleCommand,
 		attachCommand,
 		javascriptCommand,
-		// See config.go
+		// See config.go:
 		dumpConfigCommand,
+		// See misccmd.go:
+		versionCommand,
+		licenseCommand,
 	}
 	sort.Sort(cli.CommandsByName(app.Commands))
 
@@ -219,26 +223,30 @@ func lachesisMain(ctx *cli.Context) error {
 }
 
 func makeFullNode(ctx *cli.Context) *node.Node {
-	stack, nodeCfg := makeConfigNode(ctx)
+	cfg := makeAllConfigs(ctx)
 
-	gossipCfg := makeAllConfigs(ctx).Lachesis
+	// check errlock file
+	errlock.SetDefaultDatadir(cfg.Node.DataDir)
+	errlock.Check()
 
-	engine, gdb := integration.MakeEngine(nodeCfg.DataDir, &gossipCfg)
-	metrics.SetDataDir(nodeCfg.DataDir)
+	stack := makeConfigNode(ctx, &cfg.Node)
+
+	engine, adb, gdb := integration.MakeEngine(cfg.Node.DataDir, &cfg.Lachesis)
+	metrics.SetDataDir(cfg.Node.DataDir)
 
 	// configure emitter
 	var ks *keystore.KeyStore
 	if keystores := stack.AccountManager().Backends(keystore.KeyStoreType); len(keystores) > 0 {
 		ks = keystores[0].(*keystore.KeyStore)
 	}
-	setCoinbase(ctx, ks, &gossipCfg.Emitter)
+	setValidator(ctx, ks, &cfg.Lachesis.Emitter)
 
 	// Create and register a gossip network service. This is done through the definition
 	// of a node.ServiceConstructor that will instantiate a node.Service. The reason for
 	// the factory method approach is to support service restarts without relying on the
 	// individual implementations' support for such operations.
 	gossipService := func(ctx *node.ServiceContext) (node.Service, error) {
-		return gossip.NewService(ctx, gossipCfg, gdb, engine)
+		return gossip.NewService(ctx, &cfg.Lachesis, gdb, engine, adb)
 	}
 
 	if err := stack.Register(gossipService); err != nil {
@@ -248,16 +256,15 @@ func makeFullNode(ctx *cli.Context) *node.Node {
 	return stack
 }
 
-func makeConfigNode(ctx *cli.Context) (*node.Node, *node.Config) {
-	cfg := makeAllConfigs(ctx).Node
-	stack, err := node.New(&cfg)
+func makeConfigNode(ctx *cli.Context, cfg *node.Config) *node.Node {
+	stack, err := node.New(cfg)
 	if err != nil {
 		utils.Fatalf("Failed to create the protocol stack: %v", err)
 	}
 
 	addFakeAccount(ctx, stack)
 
-	return stack, &cfg
+	return stack
 }
 
 // startNode boots up the system node and all registered protocols, after which
@@ -338,21 +345,25 @@ func startNode(ctx *cli.Context, stack *node.Node) {
 	// close the node when synchronization is complete if user required.
 	if ctx.GlobalBool(utils.ExitWhenSyncedFlag.Name) {
 		go func() {
-			sub := stack.EventMux().Subscribe(downloader.DoneEvent{})
-			defer sub.Unsubscribe()
-			for {
-				event := <-sub.Chan()
-				if event == nil {
+			for first := true; ; first = false {
+				// Call ftm_syncing until it returns false
+				time.Sleep(5 * time.Second)
+
+				var syncing bool
+				err := rpcClient.CallContext(context.TODO(), &syncing, "ftm_syncing")
+				if err != nil {
 					continue
 				}
-				done, ok := event.Data.(downloader.DoneEvent)
-				if !ok {
-					continue
-				}
-				if timestamp := time.Unix(int64(done.Latest.Time), 0); time.Since(timestamp) < 10*time.Minute {
-					log.Info("Synchronisation completed", "latestnum", done.Latest.Number, "latesthash", done.Latest.Hash(),
-						"age", common.PrettyAge(timestamp))
-					stack.Stop()
+				if !syncing {
+					if !first {
+						time.Sleep(time.Minute)
+					}
+					log.Info("Synchronisation completed. Exiting due to exitwhensynced flag.")
+					err = stack.Stop()
+					if err != nil {
+						continue
+					}
+					return
 				}
 			}
 		}()

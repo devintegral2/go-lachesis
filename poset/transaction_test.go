@@ -6,6 +6,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/Fantom-foundation/go-lachesis/hash"
 	"github.com/Fantom-foundation/go-lachesis/inter"
 	"github.com/Fantom-foundation/go-lachesis/inter/idx"
 	"github.com/Fantom-foundation/go-lachesis/inter/pos"
@@ -22,23 +23,23 @@ func TestPosetTxn(t *testing.T) {
 	p, s, in := FakePoset("", nodes)
 	assert.Equal(t,
 		1*x, p.EpochState.Validators.Get(nodes[0]),
-		"balance of %s", nodes[0].String())
+		"balance of %s", hash.GetNodeName(nodes[0]))
 	assert.Equal(t,
 		1*x, p.EpochState.Validators.Get(nodes[1]),
-		"balance of %s", nodes[1].String())
+		"balance of %s", hash.GetNodeName(nodes[1]))
 
-	p.callback.SelectValidatorsGroup = func(oldEpoch, newEpoch idx.Epoch) pos.Validators {
+	p.callback.SelectValidatorsGroup = func(oldEpoch, newEpoch idx.Epoch) *pos.Validators {
 		if oldEpoch == 1 {
-			validators := p.Validators.Copy()
+			validators := p.Validators.Builder()
 			// move stake from node0 to node1
 			validators.Set(nodes[0], 0*x)
 			validators.Set(nodes[1], 2*x)
-			return validators
+			return validators.Build()
 		}
 		return p.Validators
 	}
 
-	_ = inter.ForEachRandEvent(nodes, int(p.dag.EpochLen-1), 3, nil, inter.ForEachEvent{
+	_ = inter.ForEachRandEvent(nodes, int(p.dag.MaxEpochBlocks-1), 3, nil, inter.ForEachEvent{
 		Process: func(e *inter.Event, name string) {
 			in.SetEvent(e)
 			assert.NoError(t,
@@ -57,7 +58,7 @@ func TestPosetTxn(t *testing.T) {
 	assert.Equal(t, p.PrevEpoch.Hash(), s.GetGenesis().PrevEpoch.Hash())
 
 	assert.Equal(t, idx.Epoch(0), p.PrevEpoch.Epoch)
-	assert.Equal(t, genesisTestTime, p.PrevEpoch.Time)
+	assert.Equal(t, genesisTime, p.PrevEpoch.Time)
 
 	assert.Equal(t, 5*x, p.Validators.TotalStake())
 
@@ -69,7 +70,7 @@ func TestPosetTxn(t *testing.T) {
 	p.sealEpoch()
 
 	assert.Equal(t, idx.Epoch(1), p.PrevEpoch.Epoch)
-	assert.NotEqual(t, genesisTestTime, p.PrevEpoch.Time)
+	assert.NotEqual(t, genesisTime, p.PrevEpoch.Time)
 
 	assert.Equal(t, 5*x, p.Validators.TotalStake())
 

@@ -16,7 +16,7 @@ import (
 )
 
 var (
-	genesisTestTime = inter.Timestamp(1565000000 * time.Second)
+	genesisTime = inter.Timestamp(1565000000 * time.Second)
 )
 
 const (
@@ -42,10 +42,13 @@ func (p *ExtendedPoset) EventsTillBlock(until idx.Block) hash.Events {
 }
 
 // FakePoset creates empty poset with mem store and equal stakes of nodes in genesis.
-func FakePoset(namespace string, nodes []common.Address, mods ...memorydb.Mod) (*ExtendedPoset, *Store, *EventStore) {
-	validators := pos.NewValidators()
-	for _, addr := range nodes {
-		validators.Set(addr, 1)
+func FakePoset(namespace string, nodes []idx.StakerID, mods ...memorydb.Mod) (*ExtendedPoset, *Store, *EventStore) {
+	validators := make(pos.GValidators, 0, len(nodes))
+	for _, v := range nodes {
+		validators = append(validators, pos.GenesisValidator{
+			ID:    v,
+			Stake: pos.StakeToBalance(1),
+		})
 	}
 
 	mems := memorydb.NewProducer(namespace, mods...)
@@ -54,20 +57,23 @@ func FakePoset(namespace string, nodes []common.Address, mods ...memorydb.Mod) (
 
 	atropos := hash.ZeroEvent
 	err := store.ApplyGenesis(&genesis.Genesis{
-		Time:       genesisTestTime,
-		Validators: *validators,
+		Time: genesisTime,
+		Alloc: genesis.VAccounts{
+			Validators: validators,
+			Accounts:   nil,
+		},
 	}, atropos, common.Hash{})
 	if err != nil {
 		panic(err)
 	}
 	_ = dbs.Flush(atropos.Bytes())
 
-	input := NewEventStore(nil)
+	input := NewEventStore(nil, 100)
 
 	config := lachesis.FakeNetDagConfig()
-	if config.EpochLen > 100 {
-		// EpochLen too big, test timeout is possible.
-		config.EpochLen = 100
+	if config.MaxEpochBlocks > 100 {
+		// MaxEpochBlocks too big, test timeout is possible.
+		config.MaxEpochBlocks = 100
 	}
 	poset := New(config, store, input)
 

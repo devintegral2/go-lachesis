@@ -13,7 +13,7 @@ type ConsensusCallbacks struct {
 	// ApplyBlock is callback type to apply the new block to the state
 	ApplyBlock func(block *Block, decidedFrame idx.Frame, cheaters Cheaters) (newAppHash common.Hash, sealEpoch bool)
 	// SelectValidatorsGroup is a callback type to select new validators group.
-	SelectValidatorsGroup func(oldEpoch, newEpoch idx.Epoch) (newValidators pos.Validators)
+	SelectValidatorsGroup func(oldEpoch, newEpoch idx.Epoch) (newValidators *pos.Validators)
 	// OnEventConfirmed is callback type to notify about event confirmation.
 	OnEventConfirmed func(event *EventHeaderData, seqDepth idx.Event)
 	// IsEventAllowedIntoBlock is callback type to check is event may be within block or not
@@ -33,11 +33,6 @@ type Block struct {
 
 	Root    common.Hash
 	Atropos hash.Event
-}
-
-// Hash returns Atropos's ID
-func (b *Block) Hash() hash.Event {
-	return b.Atropos
 }
 
 // NewBlock makes block from topological ordered events.

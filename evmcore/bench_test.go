@@ -152,11 +152,11 @@ func benchInsertChain(b *testing.B, disk bool, gen func(int, *BlockGen)) {
 	net := &lachesis.Config{
 		Dag: lachesis.FakeNetDagConfig(),
 		Genesis: genesis.Genesis{
-			Alloc: genesis.Accounts{benchRootAddr: {Balance: benchRootFunds}},
+			Alloc: genesis.VAccounts{Accounts: genesis.Accounts{benchRootAddr: {Balance: benchRootFunds}}},
 		},
 	}
 
-	genesisBlock := mustApplyGenesis(net, db)
+	genesisBlock := MustApplyGenesis(net, db)
 
 	// Time the insertion of the new chain.
 	// State and blocks are stored in the same DB.

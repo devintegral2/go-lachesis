@@ -6,11 +6,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/Fantom-foundation/go-lachesis/hash"
 	"github.com/Fantom-foundation/go-lachesis/inter"
+	"github.com/Fantom-foundation/go-lachesis/inter/idx"
 	"github.com/Fantom-foundation/go-lachesis/inter/pos"
 	"github.com/Fantom-foundation/go-lachesis/kvdb/memorydb"
 	"github.com/Fantom-foundation/go-lachesis/logger"
@@ -86,17 +86,14 @@ func testSpecialNamedParents(t *testing.T, asciiScheme string, exp map[int]map[s
 		},
 	})
 
-	validators := pos.NewValidators()
-	for _, peer := range nodes {
-		validators.Set(peer, 1)
-	}
+	validators := pos.EqualStakeValidators(nodes, 1)
 
 	events := make(map[hash.Event]*inter.EventHeaderData)
 	getEvent := func(id hash.Event) *inter.EventHeaderData {
 		return events[id]
 	}
 
-	vecClock := vector.NewIndex(vector.DefaultIndexConfig(), *validators, memorydb.New(), getEvent)
+	vecClock := vector.NewIndex(vector.DefaultIndexConfig(), validators, memorydb.New(), getEvent)
 
 	// build vector index
 	for _, e := range ordered {
@@ -116,7 +113,7 @@ func testSpecialNamedParents(t *testing.T, asciiScheme string, exp map[int]map[s
 	}
 
 	heads := hash.EventsSet{}
-	tips := map[common.Address]*hash.Event{}
+	tips := map[idx.StakerID]*hash.Event{}
 	// check
 	for stage, ee := range stages {
 		t.Logf("Stage %d:", stage)
@@ -136,7 +133,7 @@ func testSpecialNamedParents(t *testing.T, asciiScheme string, exp map[int]map[s
 		for _, node := range nodes {
 			selfParent := tips[node]
 
-			strategy := NewCasualityStrategy(vecClock, *validators)
+			strategy := NewCasualityStrategy(vecClock, validators)
 
 			selfParentResult, parents := FindBestParents(5, heads.Slice(), selfParent, strategy)
 

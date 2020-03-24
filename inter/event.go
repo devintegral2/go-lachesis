@@ -25,7 +25,7 @@ var (
 // Doesn't contain transactions, only their hash
 // Doesn't contain event signature
 type EventHeaderData struct {
-	Version uint32
+	Version uint32 // serialization version
 
 	Epoch idx.Epoch
 	Seq   idx.Event
@@ -33,12 +33,12 @@ type EventHeaderData struct {
 	Frame  idx.Frame
 	IsRoot bool
 
-	Creator common.Address
+	Creator idx.StakerID
 
 	PrevEpochHash common.Hash
 	Parents       hash.Events
 
-	GasPowerLeft uint64
+	GasPowerLeft GasPowerLeft
 	GasPowerUsed uint64
 
 	Lamport     idx.Lamport
@@ -83,12 +83,17 @@ func NewEvent() *Event {
 	}
 }
 
+// FmtFrame returns string representation.
+func FmtFrame(frame idx.Frame, isRoot bool) string {
+	if isRoot {
+		return fmt.Sprintf("%d:y", frame)
+	}
+	return fmt.Sprintf("%d:n", frame)
+}
+
 // String returns string representation.
 func (e *EventHeaderData) String() string {
-	if e.IsRoot {
-		return fmt.Sprintf("{id=%s, p=%s, seq=%d, f=%d, root}", e.Hash().String(), e.Parents.String(), e.Seq, e.Frame)
-	}
-	return fmt.Sprintf("{id=%s, p=%s, seq=%d, f=%d}", e.Hash().String(), e.Parents.String(), e.Seq, e.Frame)
+	return fmt.Sprintf("{id=%s, p=%s, by=%d, frame=%s}", e.Hash().ShortID(3), e.Parents.String(), e.Creator, FmtFrame(e.Frame, e.IsRoot))
 }
 
 // NoTransactions is used to check that event doesn't have transactions not having full event.
@@ -99,8 +104,8 @@ func (e *EventHeaderData) NoTransactions() bool {
 // DataToSign returns data which must be signed to sign the event
 func (e *EventHeaderData) DataToSign() []byte {
 	buf := bytes.NewBuffer([]byte{})
-	buf.Write([]byte("Lachesis: I'm signing the Event"))
-	buf.Write(e.Hash().Bytes())
+	buf.Write([]byte("Lachesis: I'm signing the Event "))
+	buf.Write(e.calcHash().Bytes())
 	return buf.Bytes()
 }
 
@@ -144,29 +149,33 @@ func (e *Event) Sign(signer func([]byte) ([]byte, error)) error {
 }
 
 // VerifySignature checks the signature against e.Creator.
-func (e *Event) VerifySignature() bool {
+func (e *Event) VerifySignature(address common.Address) bool {
 	// NOTE: Keccak256 because of AccountManager
 	signedHash := crypto.Keccak256(e.DataToSign())
 	pk, err := crypto.SigToPub(signedHash, e.Sig)
 	if err != nil {
 		return false
 	}
-	return crypto.PubkeyToAddress(*pk) == e.Creator
+	return crypto.PubkeyToAddress(*pk) == address
 }
 
 /*
  * Event ID (hash):
  */
 
-// CalcHash re-calculates event's ID
-func (e *EventHeaderData) CalcHash() hash.Event {
+func (e *EventHeaderData) calcHash() hash.Event {
 	hasher := sha3.NewLegacyKeccak256()
 	err := rlp.Encode(hasher, e)
 	if err != nil {
 		panic("can't encode: " + err.Error())
 	}
+	return hash.BytesToEvent(hasher.Sum(nil))
+}
+
+// CalcHash re-calculates event's ID
+func (e *EventHeaderData) CalcHash() hash.Event {
+	id := e.calcHash()
 	// return 24 bytes hash | epoch | lamport
-	id := hash.BytesToEvent(hasher.Sum(nil))
 	copy(id[0:4], e.Epoch.Bytes())
 	copy(id[4:8], e.Lamport.Bytes())
 	return id
@@ -227,8 +236,8 @@ func (e *Event) Size() int {
 
 // FakeFuzzingEvents generates random independent events with the same epoch for testing purpose.
 func FakeFuzzingEvents() (res []*Event) {
-	creators := []common.Address{
-		{},
+	creators := []idx.StakerID{
+		0,
 		hash.FakePeer(),
 		hash.FakePeer(),
 		hash.FakePeer(),
@@ -254,4 +263,51 @@ func FakeFuzzingEvents() (res []*Event) {
 		}
 	}
 	return
+}
+
+// GasPowerLeft is long-term gas power left and short-term gas power left
+type GasPowerLeft struct {
+	Gas [2]uint64
+}
+
+// Add add to all gas power lefts
+func (g *GasPowerLeft) Add(diff uint64) {
+	for i := range g.Gas {
+		g.Gas[i] += diff
+	}
+}
+
+// Min returns minimum within long-term gas power left and short-term gas power left
+func (g *GasPowerLeft) Min() uint64 {
+	min := g.Gas[0]
+	for _, gas := range g.Gas {
+		if min > gas {
+			min = gas
+		}
+	}
+	return min
+}
+
+// Max returns maximum within long-term gas power left and short-term gas power left
+func (g *GasPowerLeft) Max() uint64 {
+	max := g.Gas[0]
+	for _, gas := range g.Gas {
+		if max < gas {
+			max = gas
+		}
+	}
+	return max
+}
+
+// Sub subtracts from all gas power lefts
+func (g *GasPowerLeft) Sub(diff uint64) *GasPowerLeft {
+	for i := range g.Gas {
+		g.Gas[i] -= diff
+	}
+	return g
+}
+
+// String returns string representation.
+func (g *GasPowerLeft) String() string {
+	return fmt.Sprintf("{short=%d, long=%d}", g.Gas[idx.ShortTermGas], g.Gas[idx.LongTermGas])
 }

@@ -12,68 +12,106 @@ import (
 )
 
 // Events
+
 var (
-	CreateStakeTopic          = hash.Of([]byte("CreatedVStake(uint256,address,uint256)"))
-	IncreasedStakeTopic       = hash.Of([]byte("IncreasedVStake(uint256,uint256,uint256)"))
-	CreatedDelegationTopic    = hash.Of([]byte("CreatedDelegation(address,uint256,uint256)"))
-	DeactivateStakeTopic      = hash.Of([]byte("PreparedToWithdrawVStake(uint256)"))
-	DeactivateDelegationTopic = hash.Of([]byte("PreparedToWithdrawDelegation(address)"))
+	// Topics of SFC contract logs
+	Topics = struct {
+		CreatedStake                  common.Hash
+		IncreasedStake                common.Hash
+		CreatedDelegation             common.Hash
+		PreparedToWithdrawStake       common.Hash
+		PreparedToWithdrawDelegation  common.Hash
+		WithdrawnStake                common.Hash
+		WithdrawnDelegation           common.Hash
+		ClaimedDelegationReward       common.Hash
+		ClaimedValidatorReward        common.Hash
+		UpdatedBaseRewardPerSec       common.Hash
+		UpdatedGasPowerAllocationRate common.Hash
+		DeactivatedStake              common.Hash
+		DeactivatedDelegation         common.Hash
+		UpdatedStake                  common.Hash
+		UpdatedDelegation             common.Hash
+	}{
+		CreatedStake:                  hash.Of([]byte("CreatedStake(uint256,address,uint256)")),
+		IncreasedStake:                hash.Of([]byte("IncreasedStake(uint256,uint256,uint256)")),
+		CreatedDelegation:             hash.Of([]byte("CreatedDelegation(address,uint256,uint256)")),
+		PreparedToWithdrawStake:       hash.Of([]byte("PreparedToWithdrawStake(uint256)")),
+		PreparedToWithdrawDelegation:  hash.Of([]byte("PreparedToWithdrawDelegation(address, uint256)")),
+		WithdrawnStake:                hash.Of([]byte("WithdrawnStake(uint256,uint256)")),
+		WithdrawnDelegation:           hash.Of([]byte("WithdrawnDelegation(address,uint256,uint256)")),
+		ClaimedDelegationReward:       hash.Of([]byte("ClaimedDelegationReward(address,uint256,uint256,uint256,uint256)")),
+		ClaimedValidatorReward:        hash.Of([]byte("ClaimedValidatorReward(uint256,uint256,uint256,uint256)")),
+		UpdatedBaseRewardPerSec:       hash.Of([]byte("UpdatedBaseRewardPerSec(uint256)")),
+		UpdatedGasPowerAllocationRate: hash.Of([]byte("UpdatedGasPowerAllocationRate(uint256,uint256)")),
+		DeactivatedStake:              hash.Of([]byte("DeactivatedStake(uint256)")),
+		DeactivatedDelegation:         hash.Of([]byte("DeactivatedDelegation(address,uint256)")),
+		UpdatedStake:                  hash.Of([]byte("UpdatedStake(uint256,uint256,uint256)")),
+		UpdatedDelegation:             hash.Of([]byte("UpdatedDelegation(address,uint256,uint256,uint256)")),
+	}
 )
 
 // Global variables
 
-func CurrentSealedEpoch() common.Hash {
+func Owner() common.Hash {
 	return utils.U64to256(0)
 }
 
-func VStakersLastIdx() common.Hash {
-	return utils.U64to256(4)
+const (
+	offset = 30
+)
+
+func CurrentSealedEpoch() common.Hash {
+	return utils.U64to256(offset + 0)
 }
 
-func VStakersNum() common.Hash {
-	return utils.U64to256(5)
+func StakersLastID() common.Hash {
+	return utils.U64to256(offset + 4)
 }
 
-func VStakeTotalAmount() common.Hash {
-	return utils.U64to256(6)
+func StakersNum() common.Hash {
+	return utils.U64to256(offset + 5)
 }
 
-// VStake
+func StakeTotalAmount() common.Hash {
+	return utils.U64to256(offset + 6)
+}
 
-type VStakePos struct {
+// Stake
+
+type StakePos struct {
 	object
 }
 
-func VStake(stakerID uint64) VStakePos {
-	position := getMapValue(common.Hash{}, utils.U64to256(stakerID), 2)
+func Staker(stakerID idx.StakerID) StakePos {
+	position := getMapValue(common.Hash{}, utils.U64to256(uint64(stakerID)), offset+2)
 
-	return VStakePos{object{base: position.Big()}}
+	return StakePos{object{base: position.Big()}}
 }
 
-func (p *VStakePos) IsCheater() common.Hash {
+func (p *StakePos) Status() common.Hash {
 	return p.Field(0)
 }
 
-func (p *VStakePos) CreatedEpoch() common.Hash {
+func (p *StakePos) CreatedEpoch() common.Hash {
 	return p.Field(1)
 }
 
-func (p *VStakePos) CreatedTime() common.Hash {
+func (p *StakePos) CreatedTime() common.Hash {
 	return p.Field(2)
 }
 
-func (p *VStakePos) StakeAmount() common.Hash {
+func (p *StakePos) StakeAmount() common.Hash {
 	return p.Field(5)
 }
 
-func (p *VStakePos) Address() common.Hash {
+func (p *StakePos) Address() common.Hash {
 	return p.Field(8)
 }
 
-// vStakerIDs
+// stakerIDs
 
-func VStakerID(vstaker common.Address) common.Hash {
-	return getMapValue(common.Hash{}, vstaker.Hash(), 3)
+func StakerID(vstaker common.Address) common.Hash {
+	return getMapValue(common.Hash{}, vstaker.Hash(), offset+3)
 }
 
 // EpochSnapshot
@@ -83,7 +121,7 @@ type EpochSnapshotPos struct {
 }
 
 func EpochSnapshot(epoch idx.Epoch) EpochSnapshotPos {
-	position := getMapValue(common.Hash{}, utils.U64to256(uint64(epoch)), 1)
+	position := getMapValue(common.Hash{}, utils.U64to256(uint64(epoch)), offset+1)
 
 	return EpochSnapshotPos{object{base: position.Big()}}
 }
@@ -100,8 +138,28 @@ func (p *EpochSnapshotPos) EpochFee() common.Hash {
 	return p.Field(3)
 }
 
-func (p *EpochSnapshotPos) TotalValidatingPower() common.Hash {
+func (p *EpochSnapshotPos) TotalBaseRewardWeight() common.Hash {
 	return p.Field(4)
+}
+
+func (p *EpochSnapshotPos) TotalTxRewardWeight() common.Hash {
+	return p.Field(5)
+}
+
+func (p *EpochSnapshotPos) BaseRewardPerSecond() common.Hash {
+	return p.Field(6)
+}
+
+func (p *EpochSnapshotPos) StakeTotalAmount() common.Hash {
+	return p.Field(7)
+}
+
+func (p *EpochSnapshotPos) DelegationsTotalAmount() common.Hash {
+	return p.Field(8)
+}
+
+func (p *EpochSnapshotPos) TotalSupply() common.Hash {
+	return p.Field(9)
 }
 
 // ValidatorMerit
@@ -110,24 +168,28 @@ type ValidatorMeritPos struct {
 	object
 }
 
-func (p *EpochSnapshotPos) ValidatorMerit(validator common.Address) ValidatorMeritPos {
+func (p *EpochSnapshotPos) ValidatorMerit(stakerID idx.StakerID) ValidatorMeritPos {
 	base := p.Field(0)
 
-	position := getMapValue(base, validator.Hash(), 0)
+	position := getMapValue(base, utils.U64to256(uint64(stakerID)), 0)
 
 	return ValidatorMeritPos{object{base: position.Big()}}
 }
 
-func (p *ValidatorMeritPos) ValidatingPower() common.Hash {
+func (p *ValidatorMeritPos) StakeAmount() common.Hash {
 	return p.Field(0)
 }
 
-func (p *ValidatorMeritPos) StakeAmount() common.Hash {
+func (p *ValidatorMeritPos) DelegatedMe() common.Hash {
 	return p.Field(1)
 }
 
-func (p *ValidatorMeritPos) DelegatedMe() common.Hash {
+func (p *ValidatorMeritPos) BaseRewardWeight() common.Hash {
 	return p.Field(2)
+}
+
+func (p *ValidatorMeritPos) TxRewardWeight() common.Hash {
+	return p.Field(3)
 }
 
 // Util

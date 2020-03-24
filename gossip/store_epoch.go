@@ -5,30 +5,41 @@ package gossip
 */
 
 import (
-	"github.com/ethereum/go-ethereum/common"
+	"errors"
 
 	"github.com/Fantom-foundation/go-lachesis/hash"
 	"github.com/Fantom-foundation/go-lachesis/inter"
 	"github.com/Fantom-foundation/go-lachesis/inter/idx"
 	"github.com/Fantom-foundation/go-lachesis/kvdb"
+
+	"github.com/Fantom-foundation/go-lachesis/kvdb/skiperrors"
 	"github.com/Fantom-foundation/go-lachesis/kvdb/table"
 )
 
 type (
 	epochStore struct {
-		Headers kvdb.KeyValueStore `table:"header"`
-		Tips    kvdb.KeyValueStore `table:"tips"`
-		Heads   kvdb.KeyValueStore `table:"heads"`
+		Headers kvdb.KeyValueStore `table:"h"`
+		Tips    kvdb.KeyValueStore `table:"t"`
+		Heads   kvdb.KeyValueStore `table:"H"`
 	}
 )
 
+func newEpochStore(db kvdb.KeyValueStore) *epochStore {
+	es := &epochStore{}
+	table.MigrateTables(es, db)
+
+	err := errors.New("database closed")
+
+	es.Headers = skiperrors.Wrap(es.Headers, err)
+	es.Tips = skiperrors.Wrap(es.Tips, err)
+	es.Heads = skiperrors.Wrap(es.Heads, err)
+
+	return es
+}
+
 // getEpochStore is not safe for concurrent use.
 func (s *Store) getEpochStore(epoch idx.Epoch) *epochStore {
-	tables := s.getTmpDb("epoch", uint64(epoch), func(db kvdb.KeyValueStore) interface{} {
-		es := &epochStore{}
-		table.MigrateTables(es, db)
-		return es
-	})
+	tables := s.EpochDbs.Get(uint64(epoch))
 	if tables == nil {
 		return nil
 	}
@@ -38,15 +49,15 @@ func (s *Store) getEpochStore(epoch idx.Epoch) *epochStore {
 
 // delEpochStore is not safe for concurrent use.
 func (s *Store) delEpochStore(epoch idx.Epoch) {
-	s.delTmpDb("epoch", uint64(epoch))
-
+	s.EpochDbs.Del(uint64(epoch))
 	// Clear full LRU cache.
 	if s.cache.EventsHeaders != nil {
 		s.cache.EventsHeaders.Purge()
 	}
 }
 
-func (s *Store) SetLastEvent(epoch idx.Epoch, from common.Address, id hash.Event) {
+// SetLastEvent stores last unconfirmed event from a validator (off-chain)
+func (s *Store) SetLastEvent(epoch idx.Epoch, from idx.StakerID, id hash.Event) {
 	es := s.getEpochStore(epoch)
 	if es == nil {
 		return
@@ -58,7 +69,8 @@ func (s *Store) SetLastEvent(epoch idx.Epoch, from common.Address, id hash.Event
 	}
 }
 
-func (s *Store) GetLastEvent(epoch idx.Epoch, from common.Address) *hash.Event {
+// GetLastEvent returns stored last unconfirmed event from a validator (off-chain)
+func (s *Store) GetLastEvent(epoch idx.Epoch, from idx.StakerID) *hash.Event {
 	es := s.getEpochStore(epoch)
 	if es == nil {
 		return nil
@@ -89,7 +101,7 @@ func (s *Store) SetEventHeader(epoch idx.Epoch, h hash.Event, e *inter.EventHead
 
 	// Save to LRU cache.
 	if e != nil && s.cache.EventsHeaders != nil {
-		s.cache.EventsHeaders.Add(string(key), e)
+		s.cache.EventsHeaders.Add(h, e)
 	}
 }
 
@@ -99,7 +111,7 @@ func (s *Store) GetEventHeader(epoch idx.Epoch, h hash.Event) *inter.EventHeader
 
 	// Check LRU cache first.
 	if s.cache.EventsHeaders != nil {
-		if v, ok := s.cache.EventsHeaders.Get(string(key)); ok {
+		if v, ok := s.cache.EventsHeaders.Get(h); ok {
 			if w, ok := v.(*inter.EventHeaderData); ok {
 				return w
 			}
@@ -115,10 +127,20 @@ func (s *Store) GetEventHeader(epoch idx.Epoch, h hash.Event) *inter.EventHeader
 
 	// Save to LRU cache.
 	if w != nil && s.cache.EventsHeaders != nil {
-		s.cache.EventsHeaders.Add(string(key), w)
+		s.cache.EventsHeaders.Add(h, w)
 	}
 
 	return w
+}
+
+// HasEvent returns true if event exists.
+func (s *Store) HasEventHeader(h hash.Event) bool {
+	es := s.getEpochStore(h.Epoch())
+	if es == nil {
+		return false
+	}
+
+	return s.has(es.Headers, h.Bytes())
 }
 
 // DelEventHeader removes stored event header.
@@ -136,6 +158,6 @@ func (s *Store) DelEventHeader(epoch idx.Epoch, h hash.Event) {
 
 	// Remove from LRU cache.
 	if s.cache.EventsHeaders != nil {
-		s.cache.EventsHeaders.Remove(string(key))
+		s.cache.EventsHeaders.Remove(h)
 	}
 }

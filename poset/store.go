@@ -3,6 +3,7 @@ package poset
 import (
 	"fmt"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/rlp"
 	lru "github.com/hashicorp/golang-lru"
 
@@ -21,20 +22,21 @@ type Store struct {
 
 	mainDb kvdb.KeyValueStore
 	table  struct {
-		Checkpoint     kvdb.KeyValueStore `table:"Checkpoint_"`
-		Epochs         kvdb.KeyValueStore `table:"epoch_"`
-		ConfirmedEvent kvdb.KeyValueStore `table:"confirmed_"`
-		FrameInfos     kvdb.KeyValueStore `table:"frameinfo_"`
+		Checkpoint     kvdb.KeyValueStore `table:"c"`
+		Epochs         kvdb.KeyValueStore `table:"e"`
+		ConfirmedEvent kvdb.KeyValueStore `table:"C"`
+		FrameInfos     kvdb.KeyValueStore `table:"f"`
 	}
 
 	cache struct {
-		FrameRoots *lru.Cache `cache:"-"` // store by pointer
+		GenesisHash *common.Hash
+		FrameRoots  *lru.Cache `cache:"-"` // store by pointer
 	}
 
 	epochDb    kvdb.KeyValueStore
 	epochTable struct {
-		Roots       kvdb.KeyValueStore `table:"roots_"`
-		VectorIndex kvdb.KeyValueStore `table:"vectors_"`
+		Roots       kvdb.KeyValueStore `table:"r"`
+		VectorIndex kvdb.KeyValueStore `table:"v"`
 	}
 
 	logger.Instance

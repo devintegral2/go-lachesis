@@ -42,6 +42,7 @@ var testTxPoolConfig TxPoolConfig
 
 func init() {
 	testTxPoolConfig = DefaultTxPoolConfig()
+	testTxPoolConfig.PriceLimit = 1
 	testTxPoolConfig.Journal = ""
 }
 
@@ -105,7 +106,7 @@ func setupTxPool(bb ...balance) *TxPool {
 
 	blockchain := &testBlockChain{
 		statedb:       statedb,
-		gasLimit:      1000000,
+		gasLimit:      1000000 * 2,
 		chainHeadFeed: new(notify.Feed),
 	}
 

@@ -81,7 +81,7 @@ func (h Event) Hex() string {
 	return common.Hash(h).Hex()
 }
 
-// Lamport returns [4:9] bytes, which store event's Lamport.
+// Lamport returns [4:8] bytes, which store event's Lamport.
 func (h Event) Lamport() idx.Lamport {
 	return idx.BytesToLamport(h[4:8])
 }
@@ -93,7 +93,12 @@ func (h Event) Epoch() idx.Epoch {
 
 // String returns human readable string representation.
 func (h Event) String() string {
-	return h.ShortID(4)
+	return h.ShortID(3)
+}
+
+// FullID returns human readable string representation with no information loss.
+func (h Event) FullID() string {
+	return h.ShortID(32 - 4 - 4)
 }
 
 // ShortID returns human readable ID representation, suitable for API calls.
@@ -227,10 +232,17 @@ func (hh *Events) Add(hash ...Event) {
  * EventsStack methods:
  */
 
+// Push event ID on top
 func (s *EventsStack) Push(v Event) {
 	*s = append(*s, v)
 }
 
+// PushAll event IDs on top
+func (s *EventsStack) PushAll(vv Events) {
+	*s = append(*s, vv...)
+}
+
+// Pop event ID from top. Erases element.
 func (s *EventsStack) Pop() *Event {
 	l := len(*s)
 	if l == 0 {
@@ -247,6 +259,7 @@ func (s *EventsStack) Pop() *Event {
  * OrderedEvents methods:
  */
 
+// String returns string representation.
 func (hh OrderedEvents) String() string {
 	buf := &strings.Builder{}
 
@@ -295,6 +308,7 @@ func (hh OrderedEvents) Less(i, j int) bool {
 	return bytes.Compare(hh[i].Bytes(), hh[j].Bytes()) < 0
 }
 
+// Of returns hash of data
 func Of(data ...[]byte) (hash common.Hash) {
 	d := sha3.NewLegacyKeccak256()
 	for _, b := range data {
@@ -312,8 +326,8 @@ func Of(data ...[]byte) (hash common.Hash) {
  */
 
 // FakePeer generates random fake peer id for testing purpose.
-func FakePeer(seed ...int64) common.Address {
-	return common.Address(common.BytesToAddress(FakeHash(seed...).Bytes()))
+func FakePeer(seed ...int64) idx.StakerID {
+	return idx.BytesToStakerID(FakeHash(seed...).Bytes()[:4])
 }
 
 // FakeEpoch gives fixed value of fake epoch for testing purpose.

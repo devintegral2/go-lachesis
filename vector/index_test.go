@@ -1,10 +1,11 @@
 package vector
 
 import (
+	"testing"
+
 	"github.com/Fantom-foundation/go-lachesis/hash"
 	"github.com/Fantom-foundation/go-lachesis/inter"
 	"github.com/Fantom-foundation/go-lachesis/inter/pos"
-	"testing"
 
 	"github.com/Fantom-foundation/go-lachesis/kvdb/memorydb"
 )
@@ -37,10 +38,11 @@ func BenchmarkIndex_Add(b *testing.B) {
 			ordered = append(ordered, e)
 		},
 	})
-	validators := pos.NewValidators()
+	validatorsBuilder := pos.NewBuilder()
 	for _, peer := range nodes {
-		validators.Set(peer, 1)
+		validatorsBuilder.Set(peer, 1)
 	}
+	validators := validatorsBuilder.Build()
 	events := make(map[hash.Event]*inter.EventHeaderData)
 	getEvent := func(id hash.Event) *inter.EventHeaderData {
 		return events[id]
@@ -49,11 +51,11 @@ func BenchmarkIndex_Add(b *testing.B) {
 		events[e.Hash()] = &e.EventHeaderData
 	}
 
-	vecClock := NewIndex(DefaultIndexConfig(), *validators, memorydb.New(), getEvent)
+	vecClock := NewIndex(DefaultIndexConfig(), validators, memorydb.New(), getEvent)
 
 	for i := 0; i < b.N; i++ {
 		b.StopTimer()
-		vecClock.Reset(*validators, memorydb.New(), getEvent)
+		vecClock.Reset(validators, memorydb.New(), getEvent)
 		b.StartTimer()
 		for _, e := range ordered {
 			vecClock.Add(&e.EventHeaderData)

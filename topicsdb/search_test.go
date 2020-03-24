@@ -4,6 +4,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+
 	"github.com/Fantom-foundation/go-lachesis/kvdb/memorydb"
 )
 
@@ -20,17 +22,17 @@ func BenchmarkSearch(b *testing.B) {
 		}
 	}
 
-	var conditionsSet [][]Condition
+	var query [][][]common.Hash
 	for i := 0; i < len(topics); i++ {
 		from, to := topics4rec(i)
 		tt := topics[from : to-1]
 
-		conditions := make([]Condition, len(tt))
+		qq := make([][]common.Hash, len(tt))
 		for pos, t := range tt {
-			conditions[pos] = NewCondition(t.Topic, uint8(pos))
+			qq[pos] = []common.Hash{t}
 		}
 
-		conditionsSet = append(conditionsSet, conditions)
+		query = append(query, qq)
 	}
 
 	b.Run("Sync", func(b *testing.B) {
@@ -38,8 +40,8 @@ func BenchmarkSearch(b *testing.B) {
 		b.ResetTimer()
 
 		for i := 0; i < b.N; i++ {
-			conditions := conditionsSet[i%len(conditionsSet)]
-			_, err := db.Find(conditions...)
+			qq := query[i%len(query)]
+			_, err := db.Find(qq)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -51,8 +53,8 @@ func BenchmarkSearch(b *testing.B) {
 		b.ResetTimer()
 
 		for i := 0; i < b.N; i++ {
-			conditions := conditionsSet[i%len(conditionsSet)]
-			_, err := db.Find(conditions...)
+			qq := query[i%len(query)]
+			_, err := db.Find(qq)
 			if err != nil {
 				b.Fatal(err)
 			}
