@@ -25,11 +25,15 @@ sfc = web3.ftm.contract(sfcAbi).at(proxyAddr);
 epoch = Number(sfc.currentEpoch());
 console.log("current epoch:", epoch);
 
+personal.newAccount('');
+personal.newAccount('');
+
 balance = Number(web3.ftm.getBalance(ftm.coinbase));
 console.log("balance:", balance);
 
 minStake = Number(sfc.minStake());
 console.log("min stake:", minStake);
+
 
 if (balance < minStake) {
   console.log("balance < min stake. Wait");
@@ -75,14 +79,14 @@ if (balance < minStake) {
       firstLockedUpEpoch = Number(sfc.firstLockedUpEpoch());
       console.log("firstLockedUpEpoch:", firstLockedUpEpoch)
       if (firstLockedUpEpoch == 0 || firstLockedUpEpoch > epoch) {
-        sfc.startLockedUp(++epoch, {from: ftm.coinbase});
-          i = 0;
-          do {
-            newLockedUpEpoch = sfc.firstLockedUpEpoch();
-            i++;
-          } while(newLockedUpEpoch == firstLockedUpEpoch && i<100000 );
-        firstLockedUpEpoch = sfc.firstLockedUpEpoch();
-        console.log("firstLockedUpEpoch:", firstLockedUpEpoch)
+        sfc.startLockedUp(epoch + 1, {from: ftm.coinbase});
+        //   i = 0;
+        //   do {
+        //     newLockedUpEpoch = sfc.firstLockedUpEpoch();
+        //     i++;
+        //   } while(newLockedUpEpoch == firstLockedUpEpoch && i<100000 );
+        // firstLockedUpEpoch = sfc.firstLockedUpEpoch();
+        // console.log("firstLockedUpEpoch:", firstLockedUpEpoch)
       }
       //sfc.lockUpStake(1209600, { from: ftm.coinbase }); // 1209600 - 2 week
     }
